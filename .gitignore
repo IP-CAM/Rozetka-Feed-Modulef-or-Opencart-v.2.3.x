@@ -1,3 +1,15 @@
+.idea
 /admin
 /catalog
 /system
+
+!admin/view/template/extension/feed/rozetka
+!admin/controller/extension/feed/rozetka.php
+!admin/language/ru-ru/extension/feed/rozetka.php
+!admin/view/stylesheet/rozetka.css
+!admin/view/javascript/rozetka.js
+!admin/view/template/extension/feed/rozetka.tpl
+!admin/model/extension/feed/rozetka.php
+
+!system/library/Rozetka
+!system/library/RozetkaFeedGenerator.php
