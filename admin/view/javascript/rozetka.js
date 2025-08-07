@@ -402,6 +402,60 @@ $(document).ready(function() {
 		saveCategoryMappings();
 	});
 
+	// Enable upload button when file is selected
+	$('#categories-file-input').change(function() {
+		var file = this.files[0];
+		var uploadBtn = $('#btn-upload-categories');
+
+		if (file) {
+			// Validate file
+			if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+				showNotification('danger', 'Пожалуйста, выберите JSON файл', 'fa-exclamation-triangle');
+				$(this).val('');
+				uploadBtn.prop('disabled', true);
+				return;
+			}
+
+			if (file.size > 10 * 1024 * 1024) { // 10MB
+				showNotification('danger', 'Размер файла не должен превышать 10MB', 'fa-exclamation-triangle');
+				$(this).val('');
+				uploadBtn.prop('disabled', true);
+				return;
+			}
+
+			uploadBtn.prop('disabled', false);
+		} else {
+			uploadBtn.prop('disabled', true);
+		}
+	});
+
+	// Upload categories
+	$('#btn-upload-categories').click(function() {
+		var fileInput = $('#categories-file-input')[0];
+		var file = fileInput.files[0];
+
+		if (!file) {
+			showNotification('danger', 'Выберите файл для загрузки', 'fa-exclamation-triangle');
+			return;
+		}
+
+		uploadCategoriesFile(file);
+	});
+
+	// Clear all categories
+	$('#btn-clear-categories').click(function() {
+		if (!confirm('Вы уверены, что хотите удалить ВСЕ категории Rozetka? Это действие необратимо!')) {
+			return;
+		}
+
+		clearAllCategories();
+	});
+
+	// Download sample JSON
+	$('#btn-download-sample').click(function() {
+		downloadSampleJson();
+	});
+
 	updateFilterCounters();
 });
 
@@ -627,20 +681,23 @@ function numberWithCommas(x) {
 	return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function showNotification(type, message, icon) {
-	let alertClass = 'alert-' + type;
-	let html = '<div class="alert ' + alertClass + ' alert-dismissible fade in">';
+function showNotification(type, message, icon, autoHide = true) {
+	var alertClass = 'alert-' + type;
+	var html = '<div class="alert ' + alertClass + ' alert-dismissible fade in" style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px; max-width: 500px;">';
 	html += '<button type="button" class="close" data-dismiss="alert">&times;</button>';
 	html += '<i class="fa ' + icon + '"></i> ' + message;
 	html += '</div>';
 
-	$('#operation-results').html(html);
+	var notification = $(html);
+	$('body').append(notification);
 
-	setTimeout(function() {
-		$('#operation-results .alert').fadeOut(500, function() {
-			$(this).remove();
-		});
-	}, 5000);
+	if (autoHide) {
+		setTimeout(function() {
+			notification.fadeOut(500, function() {
+				$(this).remove();
+			});
+		}, type === 'danger' ? 8000 : 5000); // Ошибки показываем дольше
+	}
 }
 
 function showTestResults(json) {
@@ -915,31 +972,64 @@ function loadMappingData() {
 }
 
 function updateRozetkaCategories() {
-	let btn = $('#btn-update-rozetka-categories');
-	let originalHtml = btn.html();
+	var btn = $('#btn-update-rozetka-categories');
+	var originalHtml = btn.html();
 
 	btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Обновление...');
 	$('#import-progress').show();
 
-	simulateProgress();
+	var progressInterval = simulateProgress();
 
 	$.ajax({
 		url: 'index.php?route=extension/feed/rozetka/importCategories&token=' + getURLVar('token'),
 		type: 'get',
 		dataType: 'json',
+		timeout: 60000, // 60 секунд таймаут
 		success: function(json) {
-			$('#import-progress').hide();
+			clearInterval(progressInterval);
+
+			// Завершаем прогресс бар
+			$('#import-progress .progress-bar').css('width', '100%');
+			$('#progress-percent').text('100%');
+			$('#progress-text').text('Готово!');
+
+			setTimeout(function() {
+				$('#import-progress').hide();
+			}, 1000);
 
 			if (json.success) {
 				showNotification('success', 'Категории Rozetka успешно обновлены. Импортировано: ' + json.total_categories, 'fa-check-circle');
 				loadRozetkaCategories();
 			} else {
-				showNotification('danger', json.message || 'Ошибка при обновлении категорий', 'fa-exclamation-triangle');
+				showNotification('danger', json.message || 'Неизвестная ошибка при обновлении категорий', 'fa-exclamation-triangle');
+				console.error('Import error:', json);
 			}
 		},
-		error: function() {
+		error: function(xhr, status, error) {
+			clearInterval(progressInterval);
 			$('#import-progress').hide();
-			showNotification('danger', 'Ошибка соединения при обновлении категорий', 'fa-exclamation-triangle');
+
+			var errorMessage = 'Ошибка соединения при обновлении категорий';
+
+			if (xhr.responseJSON && xhr.responseJSON.message) {
+				errorMessage = xhr.responseJSON.message;
+			} else if (xhr.status === 403) {
+				errorMessage = 'Доступ запрещен (HTTP 403). Проверьте права доступа.';
+			} else if (xhr.status === 500) {
+				errorMessage = 'Внутренняя ошибка сервера (HTTP 500)';
+			} else if (status === 'timeout') {
+				errorMessage = 'Превышено время ожидания. Попробуйте позже.';
+			} else if (xhr.status > 0) {
+				errorMessage = 'HTTP ошибка: ' + xhr.status + ' - ' + error;
+			}
+
+			showNotification('danger', errorMessage, 'fa-exclamation-triangle');
+			console.error('AJAX error:', {
+				status: xhr.status,
+				statusText: xhr.statusText,
+				responseText: xhr.responseText,
+				error: error
+			});
 		},
 		complete: function() {
 			btn.prop('disabled', false).html(originalHtml);
@@ -948,19 +1038,27 @@ function updateRozetkaCategories() {
 }
 
 function simulateProgress() {
-	let progress = 0;
-	let interval = setInterval(function() {
-		progress += Math.random() * 15;
-		if (progress > 90) progress = 90;
+	var progress = 0;
+	$('#progress-text').text('Загружаем категории Rozetka...');
+
+	var interval = setInterval(function() {
+		progress += Math.random() * 10 + 5; // Более плавный прогресс
+		if (progress > 90) progress = 90; // Не доходим до 100% пока не получен ответ
 
 		$('#import-progress .progress-bar').css('width', progress + '%');
 		$('#progress-percent').text(Math.round(progress) + '%');
 
-		if (progress >= 90) {
+		if (progress >= 50 && progress < 70) {
+			$('#progress-text').text('Парсим категории...');
+		} else if (progress >= 70 && progress < 90) {
+			$('#progress-text').text('Сохраняем в базу данных...');
+		} else if (progress >= 90) {
 			$('#progress-text').text('Завершаем импорт...');
-			clearInterval(interval);
 		}
-	}, 500);
+
+	}, 800); // Немного медленнее для лучшего UX
+
+	return interval; // Возвращаем интервал для очистки
 }
 
 function renderShopCategories(categories) {
@@ -1140,4 +1238,168 @@ function saveCategoryMappings() {
 			btn.prop('disabled', false).html(originalHtml);
 		}
 	});
+}
+
+function uploadCategoriesFile(file) {
+	var formData = new FormData();
+	formData.append('categories_file', file);
+
+	var btn = $('#btn-upload-categories');
+	var originalHtml = btn.html();
+
+	btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Загрузка...');
+	$('#import-progress').show();
+
+	var progressInterval = simulateUploadProgress();
+
+	$.ajax({
+		url: 'index.php?route=extension/feed/rozetka/importCategories&token=' + getURLVar('token'),
+		type: 'POST',
+		data: formData,
+		processData: false,
+		contentType: false,
+		dataType: 'json',
+		timeout: 60000,
+		success: function(json) {
+			clearInterval(progressInterval);
+
+			// Complete progress bar
+			$('#import-progress .progress-bar').css('width', '100%');
+			$('#progress-percent').text('100%');
+			$('#progress-text').text('Готово!');
+
+			setTimeout(function() {
+				$('#import-progress').hide();
+			}, 1000);
+
+			if (json.success) {
+				var message = json.message + '<br>' +
+					'<strong>Всего категорий:</strong> ' + json.total_categories;
+
+				$('#upload-results').html(
+					'<div class="alert alert-success">' +
+					'<h4><i class="fa fa-check-circle"></i> Импорт завершен успешно</h4>' +
+					'<p>' + message + '</p>' +
+					'</div>'
+				).show();
+
+				showNotification('success', 'Категории успешно импортированы!', 'fa-check-circle');
+
+				// Refresh categories lists
+				loadRozetkaCategories();
+
+				// Clear file input
+				$('#categories-file-input').val('');
+				btn.prop('disabled', true);
+
+			} else {
+				$('#upload-results').html(
+					'<div class="alert alert-danger">' +
+					'<h4><i class="fa fa-exclamation-triangle"></i> Ошибка импорта</h4>' +
+					'<p>' + json.message + '</p>' +
+					'</div>'
+				).show();
+
+				showNotification('danger', json.message, 'fa-exclamation-triangle');
+			}
+		},
+		error: function(xhr, status, error) {
+			clearInterval(progressInterval);
+			$('#import-progress').hide();
+
+			var errorMessage = 'Ошибка при загрузке файла';
+
+			if (xhr.status === 413) {
+				errorMessage = 'Файл слишком большой';
+			} else if (status === 'timeout') {
+				errorMessage = 'Превышено время ожидания';
+			} else if (xhr.responseJSON && xhr.responseJSON.message) {
+				errorMessage = xhr.responseJSON.message;
+			}
+
+			$('#upload-results').html(
+				'<div class="alert alert-danger">' +
+				'<h4><i class="fa fa-exclamation-triangle"></i> Ошибка загрузки</h4>' +
+				'<p>' + errorMessage + '</p>' +
+				'</div>'
+			).show();
+
+			showNotification('danger', errorMessage, 'fa-exclamation-triangle');
+		},
+		complete: function() {
+			btn.prop('disabled', false).html(originalHtml);
+		}
+	});
+}
+
+function simulateUploadProgress() {
+	var progress = 0;
+	$('#progress-text').text('Загружаем файл...');
+
+	return setInterval(function() {
+		progress += Math.random() * 10 + 5;
+		if (progress > 90) progress = 90;
+
+		$('#import-progress .progress-bar').css('width', progress + '%');
+		$('#progress-percent').text(Math.round(progress) + '%');
+
+		if (progress >= 30 && progress < 60) {
+			$('#progress-text').text('Валидация данных...');
+		} else if (progress >= 60 && progress < 90) {
+			$('#progress-text').text('Импорт в базу данных...');
+		}
+	}, 500);
+}
+
+function clearAllCategories() {
+	$.ajax({
+		url: 'index.php?route=extension/feed/rozetka/clearCategories&token=' + getURLVar('token'),
+		type: 'POST',
+		dataType: 'json',
+		success: function(json) {
+			if (json.success) {
+				showNotification('success', 'Все категории успешно удалены', 'fa-check-circle');
+				loadRozetkaCategories(); // Refresh the list
+			} else {
+				showNotification('danger', json.message || 'Ошибка при удалении категорий', 'fa-exclamation-triangle');
+			}
+		},
+		error: function() {
+			showNotification('danger', 'Ошибка соединения', 'fa-exclamation-triangle');
+		}
+	});
+}
+
+function downloadSampleJson() {
+	var sampleData = [
+		{
+			"categoryId": "80001",
+			"name": "Фотоапарати",
+			"fullName": "Аксесуари до фото/відео > Фотоапарати",
+			"url": "https://rozetka.com.ua/ua/photo/c80001/",
+			"level": 5,
+			"parentId": "80259"
+		},
+		{
+			"categoryId": "80002",
+			"name": "Відеокамери",
+			"fullName": "Аксесуари до фото/відео > Фотоапарати > Відеокамери",
+			"url": "https://rozetka.com.ua/ua/video/c80002/",
+			"level": 5,
+			"parentId": "80001"
+		}
+	];
+
+	var dataStr = JSON.stringify(sampleData, null, 2);
+	var dataBlob = new Blob([dataStr], {type: 'application/json'});
+	var url = URL.createObjectURL(dataBlob);
+	var link = document.createElement('a');
+	link.href = url;
+	link.download = 'rozetka_categories_sample.json';
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+
+	showNotification('success', 'Пример файла скачан', 'fa-download');
 }

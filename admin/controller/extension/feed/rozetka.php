@@ -353,33 +353,122 @@ class ControllerExtensionFeedRozetka extends Controller {
 
 	public function importCategories()
 	{
-		require_once(DIR_SYSTEM . 'library/Rozetka/CategoriesParser.php');
-		$parser = new CategoriesParser();
+		$json = array();
 
-		try {
-			$categories = $parser->parseFromUrl('https://rozetka.com.ua/ua/all-categories-goods/');
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json = array(
+				'success' => false,
+				'message' => $this->language->get('error_permission')
+			);
+		} else {
+			try {
+				// Проверяем, что файл был загружен
+				if (!isset($_FILES['categories_file']) || $_FILES['categories_file']['error'] !== UPLOAD_ERR_OK) {
+					throw new Exception('Файл не был загружен или произошла ошибка при загрузке');
+				}
 
-			if (!empty($categories)) {
+				$uploadedFile = $_FILES['categories_file'];
+
+				// Проверяем размер файла (максимум 10MB)
+				if ($uploadedFile['size'] > 10 * 1024 * 1024) {
+					throw new Exception('Размер файла превышает 10MB');
+				}
+
+				// Проверяем расширение
+				$fileExtension = strtolower(pathinfo($uploadedFile['name'], PATHINFO_EXTENSION));
+				if ($fileExtension !== 'json') {
+					throw new Exception('Поддерживаются только JSON файлы');
+				}
+
+				// Читаем содержимое файла
+				$fileContent = file_get_contents($uploadedFile['tmp_name']);
+				if ($fileContent === false) {
+					throw new Exception('Не удалось прочитать содержимое файла');
+				}
+
+				// Парсим JSON
+				$categories = json_decode($fileContent, true);
+				if (json_last_error() !== JSON_ERROR_NONE) {
+					throw new Exception('Некорректный JSON формат: ' . json_last_error_msg());
+				}
+
+				// Валидируем структуру данных
+				$validationResult = $this->validateCategoriesData($categories);
+				if (!$validationResult['valid']) {
+					throw new Exception($validationResult['error']);
+				}
+
+				// Импортируем в базу данных
 				$this->load->model('extension/feed/rozetka');
-				$this->model_extension_feed_rozetka->importCategories($categories);
+				$importResult = $this->model_extension_feed_rozetka->importCategoriesFromArray($categories);
 
-				$statistics = $parser->getStatistics();
+				$json = array(
+					'success' => true,
+					'total_categories' => count($categories),
+					'imported_categories' => $importResult['imported'],
+					'updated_categories' => $importResult['updated'],
+					'message' => "Успешно импортировано категорий: {$importResult['imported']}, обновлено: {$importResult['updated']}"
+				);
 
-				$json['success'] = true;
-				$json['total_categories'] = $statistics['total'];
-			} else {
-				$json['success'] = false;
-				$json['message'] = "Empty Response";
+				// Логируем успешный импорт
+				$this->log->write('Rozetka Categories: Импортировано ' . count($categories) . ' категорий из JSON файла');
+
+			} catch (Exception $e) {
+				$json = array(
+					'success' => false,
+					'message' => $e->getMessage()
+				);
+
+				// Логируем ошибку
+				$this->log->write('Rozetka Categories Import Error: ' . $e->getMessage());
 			}
-
-
-		} catch (Exception $e) {
-			$json['success'] = false;
-			$json['message'] = $e->getMessage();
 		}
 
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Валидация данных категорий
+	 */
+	private function validateCategoriesData(array $categories): array
+	{
+		if (empty($categories)) {
+			return ['valid' => false, 'error' => 'Файл не содержит категорий'];
+		}
+
+		if (!is_array($categories)) {
+			return ['valid' => false, 'error' => 'Неверная структура данных - ожидается массив'];
+		}
+
+		$requiredFields = ['categoryId', 'name', 'fullName', 'url', 'level'];
+
+		foreach ($categories as $index => $category) {
+			if (!is_array($category)) {
+				return ['valid' => false, 'error' => "Категория #$index имеет неверный формат"];
+			}
+
+			foreach ($requiredFields as $field) {
+				if (!isset($category[$field]) || empty($category[$field])) {
+					return ['valid' => false, 'error' => "Категория #$index: отсутствует поле '$field'"];
+				}
+			}
+
+			// Проверяем типы данных
+			if (!is_string($category['categoryId']) && !is_numeric($category['categoryId'])) {
+				return ['valid' => false, 'error' => "Категория #$index: categoryId должен быть строкой или числом"];
+			}
+
+			if (!is_int($category['level']) || $category['level'] < 1 || $category['level'] > 10) {
+				return ['valid' => false, 'error' => "Категория #$index: level должен быть числом от 1 до 10"];
+			}
+
+			if (!filter_var($category['url'], FILTER_VALIDATE_URL)) {
+				return ['valid' => false, 'error' => "Категория #$index: некорректный URL"];
+			}
+		}
+
+		return ['valid' => true];
 	}
 
 	/**
@@ -448,6 +537,30 @@ class ControllerExtensionFeedRozetka extends Controller {
 				$json['status'] = 'success';
 			} else {
 				$json['error'] = 'Неверный формат данных';
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	public function clearCategories()
+	{
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			try {
+				$this->load->model('extension/feed/rozetka');
+				$this->model_extension_feed_rozetka->clearRozetkaCategories();
+
+				$json['success'] = true;
+				$json['message'] = 'Все категории успешно удалены';
+
+				$this->log->write('Rozetka Categories: Все категории удалены администратором');
+			} catch (Exception $e) {
+				$json['error'] = 'Ошибка при удалении категорий: ' . $e->getMessage();
 			}
 		}
 

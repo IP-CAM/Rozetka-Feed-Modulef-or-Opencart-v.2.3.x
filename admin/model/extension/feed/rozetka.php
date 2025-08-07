@@ -43,28 +43,111 @@ class ModelExtensionFeedRozetka extends Model {
 		}
 	}
 
-	public function importCategories(array $categories)
+	/**
+	 * Импорт категорий из массива данных
+	 */
+	public function importCategoriesFromArray(array $categories): array
 	{
-		$this->db->query("TRUNCATE TABLE {$this->dbPrefix}rozetka_categories");
+		$imported = 0;
+		$updated = 0;
 
-		foreach ($categories as $category) {
-			$this->db->query("
-				INSERT INTO `{$this->dbPrefix}rozetka_categories` 
-				SET 
-					`category_id` = " . (int)$category['categoryId'] . ", 
-					`name` = '{$this->db->escape($category['name'])}', 
-					`full_name` = '{$this->db->escape($category['fullName'])}', 
-					`url` = '{$this->db->escape($category['url'])}', 
-					`level` = " . (int)$category['level'] . ", 
-					`parent_id` = " . (int)$category['parent_id'] . "
-				ON DUPLICATE KEY UPDATE 
-					`name` = '{$this->db->escape($category['name'])}', 
-					`full_name` = '{$this->db->escape($category['fullName'])}', 
-					`url` = '{$this->db->escape($category['url'])}', 
-					`level` = " . (int)$category['level'] . ", 
-					`parent_id` = " . (int)$category['parent_id'] . "
-			");
+		// Начинаем транзакцию
+		$this->db->query("START TRANSACTION");
+
+		try {
+			foreach ($categories as $category) {
+				$categoryId = $this->db->escape($category['categoryId']);
+				$name = $this->db->escape($category['name']);
+				$fullName = $this->db->escape($category['fullName']);
+				$url = $this->db->escape($category['url']);
+				$level = (int)$category['level'];
+				$parentId = isset($category['parentId']) && !empty($category['parentId']) ?
+					$this->db->escape($category['parentId']) : 'NULL';
+
+				// Проверяем, существует ли категория
+				$existsQuery = $this->db->query("
+                SELECT `id` FROM `{$this->dbPrefix}rozetka_categories` 
+                WHERE `category_id` = '$categoryId'
+            ");
+
+				if ($existsQuery->num_rows > 0) {
+					// Обновляем существующую
+					$this->db->query("
+                    UPDATE `{$this->dbPrefix}rozetka_categories` 
+                    SET 
+                        `name` = '$name',
+                        `full_name` = '$fullName',
+                        `url` = '$url',
+                        `level` = $level,
+                        `parent_id` = $parentId,
+                        `updated_at` = NOW()
+                    WHERE `category_id` = '$categoryId'
+                ");
+					$updated++;
+				} else {
+					// Вставляем новую
+					$this->db->query("
+                    INSERT INTO `{$this->dbPrefix}rozetka_categories` 
+                    SET 
+                        `category_id` = '$categoryId',
+                        `name` = '$name',
+                        `full_name` = '$fullName',
+                        `url` = '$url',
+                        `level` = $level,
+                        `parent_id` = $parentId,
+                        `created_at` = NOW(),
+                        `updated_at` = NOW()
+                ");
+					$imported++;
+				}
+			}
+
+			$this->db->query("COMMIT");
+
+		} catch (Exception $e) {
+			$this->db->query("ROLLBACK");
+			throw $e;
 		}
+
+		return [
+			'imported' => $imported,
+			'updated' => $updated,
+			'total' => $imported + $updated
+		];
+	}
+
+	/**
+	 * Очистка всех категорий Rozetka
+	 */
+	public function clearRozetkaCategories(): void
+	{
+		$this->db->query("TRUNCATE TABLE `{$this->dbPrefix}rozetka_categories`");
+	}
+
+	/**
+	 * Получение статистики категорий
+	 */
+	public function getCategoriesStatistics(): array
+	{
+		$query = $this->db->query("SELECT COUNT(*) as total FROM `{$this->dbPrefix}rozetka_categories`");
+		$total = (int)$query->row['total'];
+
+		$levelQuery = $this->db->query("
+        SELECT `level`, COUNT(*) as count 
+        FROM `{$this->dbPrefix}rozetka_categories` 
+        GROUP BY `level` 
+        ORDER BY `level`
+    ");
+
+		$byLevel = [];
+		foreach ($levelQuery->rows as $row) {
+			$byLevel[$row['level']] = (int)$row['count'];
+		}
+
+		return [
+			'total' => $total,
+			'by_level' => $byLevel
+		];
 	}
 	public function install()
 	{
@@ -91,13 +174,16 @@ class ModelExtensionFeedRozetka extends Model {
 			`full_name` text NOT NULL COMMENT 'Полное название с иерархией',
 			`url` text NOT NULL COMMENT 'URL категории',
 			`level` tinyint(4) NOT NULL DEFAULT 1 COMMENT 'Уровень вложенности',
-			`parent_id` int(11) DEFAULT NULL COMMENT 'ID родительской категории'
+			`parent_id` varchar(20) DEFAULT NULL COMMENT 'ID родительской категории',
+			`created_at` datetime DEFAULT NULL COMMENT 'Дата создания',
+			`updated_at` datetime DEFAULT NULL COMMENT 'Дата обновления',
 			PRIMARY KEY (`id`),
 			UNIQUE KEY `category_id_unique` (`category_id`),
 			KEY `idx_parent_id` (`parent_id`),
 			KEY `idx_level` (`level`),
 			KEY `idx_category_id` (`category_id`)
 		) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci");
+
 
 		$this->db->query("CREATE TABLE IF NOT EXISTS `{$this->dbPrefix}category_mapping` (
 			`id` int(11) NOT NULL AUTO_INCREMENT,
