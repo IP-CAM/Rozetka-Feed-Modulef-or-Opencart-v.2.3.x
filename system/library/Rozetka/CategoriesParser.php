@@ -14,7 +14,7 @@ use Exception;
  * @author Maguto
  * @version 1.0
  */
-class RozetkaCategoriesParser
+class CategoriesParser
 {
 	private array $categories = [];
 	private array $categoryMap = [];

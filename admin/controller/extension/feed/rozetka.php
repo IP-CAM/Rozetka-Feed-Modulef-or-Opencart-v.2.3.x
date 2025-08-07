@@ -2,7 +2,7 @@
 
 use Cart\User;
 use Rozetka\Logger;
-use Rozetka\RozetkaCategoriesParser;
+use Rozetka\CategoriesParser;
 
 /**
  * @property Config $config
@@ -353,8 +353,8 @@ class ControllerExtensionFeedRozetka extends Controller {
 
 	public function importCategories()
 	{
-		require_once(DIR_SYSTEM . 'library/Rozetka/RozetkaCategoriesParser.php');
-		$parser = new RozetkaCategoriesParser();
+		require_once(DIR_SYSTEM . 'library/Rozetka/CategoriesParser.php');
+		$parser = new CategoriesParser();
 
 		try {
 			$categories = $parser->parseFromUrl('https://rozetka.com.ua/ua/all-categories-goods/');

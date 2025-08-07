@@ -22,6 +22,11 @@ class ModelExtensionFeedRozetka extends Model {
 					`level` = " . (int)$category['level'] . ", 
 					`parent_id` = " . (int)$category['parent_id'] . "
 				ON DUPLICATE KEY UPDATE 
+					`name` = '{$this->db->escape($category['name'])}', 
+					`full_name` = '{$this->db->escape($category['fullName'])}', 
+					`url` = '{$this->db->escape($category['url'])}', 
+					`level` = " . (int)$category['level'] . ", 
+					`parent_id` = " . (int)$category['parent_id'] . "
 			");
 		}
 	}
