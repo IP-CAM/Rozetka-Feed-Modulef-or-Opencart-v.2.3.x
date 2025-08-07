@@ -2,6 +2,7 @@
 
 use Cart\User;
 use Rozetka\Logger;
+use Rozetka\RozetkaCategoriesParser;
 
 /**
  * @property Config $config
@@ -25,6 +26,7 @@ use Rozetka\Logger;
  * @uses ControllerExtensionFeedRozetka::generatePreview()
  * @uses ControllerExtensionFeedRozetka::clearCache()
  * @uses ControllerExtensionFeedRozetka::getGenerationHistory()
+ * @uses ControllerExtensionFeedRozetka::importCategories()
  */
 
 class ControllerExtensionFeedRozetka extends Controller {
@@ -347,6 +349,37 @@ class ControllerExtensionFeedRozetka extends Controller {
 		$this->load->model('extension/feed/rozetka');
 
 		$this->model_extension_feed_rozetka->uninstall();
+	}
+
+	public function importCategories()
+	{
+		require_once(DIR_SYSTEM . 'library/Rozetka/RozetkaCategoriesParser.php');
+		$parser = new RozetkaCategoriesParser();
+
+		try {
+			$categories = $parser->parseFromUrl('https://rozetka.com.ua/ua/all-categories-goods/');
+
+			if (!empty($categories)) {
+				$this->load->model('extension/feed/rozetka');
+				$this->model_extension_feed_rozetka->importCategories($categories);
+
+				$statistics = $parser->getStatistics();
+
+				$json['success'] = true;
+				$json['total_categories'] = $statistics['total'];
+			} else {
+				$json['success'] = false;
+				$json['message'] = "Empty Response";
+			}
+
+
+		} catch (Exception $e) {
+			$json['success'] = false;
+			$json['message'] = $e->getMessage();
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
 	}
 
 	public function generatePreview() {
