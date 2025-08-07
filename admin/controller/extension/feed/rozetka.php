@@ -18,11 +18,13 @@ use Rozetka\Logger;
  * @property ModelCatalogCategory $model_catalog_category
  * @property ModelCatalogManufacturer $model_catalog_manufacturer
  * @property ModelLocalisationCurrency $model_localisation_currency
+ * @property ModelExtensionFeedRozetka $model_extension_feed_rozetka
  * @uses ControllerExtensionFeedRozetka
  * @uses ControllerExtensionFeedRozetka::testGeneration()
  * @uses ControllerExtensionFeedRozetka::getStatistics()
  * @uses ControllerExtensionFeedRozetka::generatePreview()
  * @uses ControllerExtensionFeedRozetka::clearCache()
+ * @uses ControllerExtensionFeedRozetka::getGenerationHistory()
  */
 
 class ControllerExtensionFeedRozetka extends Controller {
@@ -258,119 +260,6 @@ class ControllerExtensionFeedRozetka extends Controller {
 	}
 
 	/**
-	 * Полная генерация фида
-	 */
-	public function generateFullFeed() {
-		$this->load->language('extension/feed/rozetka');
-
-		$json = array();
-
-		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$json['error'] = $this->language->get('error_permission');
-		} else {
-			// Увеличиваем лимиты для полной генерации
-			@set_time_limit(300); // 5 минут
-			@ini_set('memory_limit', '512M');
-
-			$result = $this->feed_generator->generateFeed();
-			$json = $result;
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	/**
-	 * Валидация настроек через библиотеку
-	 */
-	public function validateSettings() {
-		$json = array();
-
-		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$json['error'] = $this->language->get('error_permission');
-		} else {
-			$settings = $this->request->post;
-			$errors = $this->feed_generator->validateSettings($settings);
-
-			if (empty($errors)) {
-				$json['status'] = 'success';
-				$json['message'] = 'Настройки корректны';
-			} else {
-				$json['status'] = 'error';
-				$json['errors'] = $errors;
-			}
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	/**
-	 * Экспорт настроек
-	 */
-	public function exportSettings() {
-		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$this->session->data['error'] = $this->language->get('error_permission');
-			$this->response->redirect($this->url->link('extension/feed/rozetka', 'token=' . $this->session->data['token'], true));
-			return;
-		}
-
-		$settings = $this->feed_generator->getSettings();
-
-		$filename = 'rozetka_feed_settings_' . date('Y-m-d_H-i-s') . '.json';
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->addHeader('Content-Disposition: attachment; filename="' . $filename . '"');
-		$this->response->setOutput(json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-	}
-
-	/**
-	 * Импорт настроек
-	 */
-	public function importSettings() {
-		$this->load->language('extension/feed/rozetka');
-
-		$json = array();
-
-		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$json['error'] = $this->language->get('error_permission');
-		} else {
-			if (isset($this->request->files['settings_file']) && is_uploaded_file($this->request->files['settings_file']['tmp_name'])) {
-				$file_content = file_get_contents($this->request->files['settings_file']['tmp_name']);
-				$settings = json_decode($file_content, true);
-
-				if ($settings && is_array($settings)) {
-					// Валидация импортируемых настроек
-					$validation_errors = $this->feed_generator->validateSettings($settings);
-
-					if (empty($validation_errors)) {
-						// Преобразование в формат OpenCart настроек
-						$opencart_settings = array();
-						foreach ($settings as $key => $value) {
-							$opencart_settings['feed_rozetka_' . $key] = $value;
-						}
-
-						$this->load->model('setting/setting');
-						$this->model_setting_setting->editSetting('feed_rozetka', $opencart_settings);
-
-						$json['success'] = 'Настройки успешно импортированы';
-						$json['status'] = 'success';
-					} else {
-						$json['error'] = 'Ошибки в импортируемых настройках: ' . implode(', ', $validation_errors);
-					}
-				} else {
-					$json['error'] = 'Неверный формат файла настроек';
-				}
-			} else {
-				$json['error'] = 'Файл не был загружен';
-			}
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	/**
 	 * Настройка языковых переменных
 	 */
 	private function setLanguageData(&$data) {
@@ -433,17 +322,18 @@ class ControllerExtensionFeedRozetka extends Controller {
 
 	/**
 	 * Установка модуля (создание необходимых таблиц)
+	 *
+	 * @throws Exception
 	 */
 	public function install() {
-		// Создание таблиц через библиотеку
-		$logger = new Logger($this->registry);
-		// Таблица логов создается автоматически при инициализации логгера
-
-		$this->log->write('Rozetka Feed: Модуль установлен');
+		$this->load->model('extension/feed/rozetka');
+		$this->model_extension_feed_rozetka->install();
 	}
 
 	/**
 	 * Удаление модуля
+	 *
+	 * @throws Exception
 	 */
 	public function uninstall() {
 		$this->load->model('setting/setting');
@@ -454,10 +344,9 @@ class ControllerExtensionFeedRozetka extends Controller {
 		// Очищаем кэш
 		$this->feed_generator->clearCache();
 
-		// Опционально: удаление таблицы логов
-		// $this->db->query("DROP TABLE IF EXISTS " . DB_PREFIX . "rozetka_feed_log");
+		$this->load->model('extension/feed/rozetka');
 
-		$this->log->write('Rozetka Feed: Модуль удален');
+		$this->model_extension_feed_rozetka->uninstall();
 	}
 
 	public function generatePreview() {

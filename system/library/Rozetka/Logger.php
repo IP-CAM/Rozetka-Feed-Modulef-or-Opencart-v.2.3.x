@@ -21,28 +21,6 @@ class Logger {
 		$this->db = $registry->get('db');
 		$this->log = $registry->get('log');
 		$this->dbPrefix = DB_PREFIX;
-		$this->createLogTable();
-	}
-
-	/**
-	 * Создание таблицы логов если не существует
-	 */
-	private function createLogTable() {
-		$this->db->query("CREATE TABLE IF NOT EXISTS `{$this->dbPrefix}rozetka_feed_log` (
-            `log_id` int(11) NOT NULL AUTO_INCREMENT,
-            `products_count` int(11) NOT NULL DEFAULT 0,
-            `offers_count` int(11) NOT NULL DEFAULT 0,
-            `file_size` varchar(20) NOT NULL DEFAULT '',
-            `generation_time` float NOT NULL DEFAULT 0,
-            `memory_used` varchar(20) NOT NULL DEFAULT '',
-            `date_generated` datetime NOT NULL,
-            `status` enum('started','success','error') NOT NULL DEFAULT 'started',
-            `error_message` text,
-            `warnings` text,
-            PRIMARY KEY (`log_id`),
-            KEY date_generated (`date_generated`),
-            KEY status (`status`)
-        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci");
 	}
 
 	/**
