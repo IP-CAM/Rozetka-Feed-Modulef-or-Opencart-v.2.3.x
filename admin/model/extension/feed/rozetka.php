@@ -7,6 +7,42 @@
 class ModelExtensionFeedRozetka extends Model {
 	private string $dbPrefix = DB_PREFIX;
 
+	public function getRozetkaCategories() {
+		$query = $this->db->query("SELECT * FROM `{$this->dbPrefix}rozetka_categories` ORDER BY `level`, `name`");
+		return $query->rows;
+	}
+
+	public function getCategoryMappings() {
+		$query = $this->db->query("
+			SELECT 
+				`cm`.*,
+				`cd`.`name` as `shop_category_name`,
+				`rc`.`name` as `rozetka_category_name`,
+				`rc`.`full_name` as `rozetka_category_full_name`
+			FROM `{$this->dbPrefix}category_mapping` `cm`
+			LEFT JOIN `{$this->dbPrefix}category_description` `cd` ON (`cm`.`shop_category_id` = `cd`.`category_id`)
+			LEFT JOIN `{$this->dbPrefix}rozetka_categories` `rc` ON (`cm`.`rozetka_category_id` = `rc`.`category_id`)
+			WHERE `cd`.`language_id` = '" . (int)$this->config->get('config_language_id') . "'
+			ORDER BY `cd`.`name`
+		");
+		return $query->rows;
+	}
+
+	public function saveCategoryMappings($mappings) {
+		// Clear existing mappings
+		$this->db->query("TRUNCATE TABLE `{$this->dbPrefix}category_mapping`");
+
+		// Insert new mappings
+		foreach ($mappings as $mapping) {
+			$this->db->query("
+				INSERT INTO `{$this->dbPrefix}category_mapping` 
+				SET 
+					`shop_category_id` = '" . (int)$mapping['shop_category_id'] . "',
+					`rozetka_category_id` = '" . $this->db->escape($mapping['rozetka_category_id']) . "'
+			");
+		}
+	}
+
 	public function importCategories(array $categories)
 	{
 		$this->db->query("TRUNCATE TABLE {$this->dbPrefix}rozetka_categories");
@@ -62,11 +98,21 @@ class ModelExtensionFeedRozetka extends Model {
 			KEY `idx_level` (`level`),
 			KEY `idx_category_id` (`category_id`)
 		) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci");
+
+		$this->db->query("CREATE TABLE IF NOT EXISTS `{$this->dbPrefix}category_mapping` (
+			`id` int(11) NOT NULL AUTO_INCREMENT,
+			`shop_category_id` int(11) NOT NULL COMMENT 'ID категории магазина',
+			`rozetka_category_id` varchar(20) NOT NULL COMMENT 'ID категории Rozetka',
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `shop_category_unique` (`shop_category_id`),
+			KEY `idx_rozetka_category` (`rozetka_category_id`)
+		) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci");
 	}
 
 	public function uninstall()
 	{
 		$this->db->query("DROP TABLE IF EXISTS `{$this->dbPrefix}rozetka_feed_log`");
 		$this->db->query("DROP TABLE IF EXISTS `{$this->dbPrefix}rozetka_categories`");
+		$this->db->query("DROP TABLE IF EXISTS `{$this->dbPrefix}category_mapping`");
 	}
 }

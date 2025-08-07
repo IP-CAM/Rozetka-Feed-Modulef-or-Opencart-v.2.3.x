@@ -382,6 +382,79 @@ class ControllerExtensionFeedRozetka extends Controller {
 		$this->response->setOutput(json_encode($json));
 	}
 
+	/**
+	 * @throws Exception
+	 */
+	public function getShopCategories() {
+		$this->load->model('catalog/category');
+		$categories = $this->model_catalog_category->getCategories();
+
+		$json = array(
+			'status' => 'success',
+			'categories' => $categories
+		);
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * @throws Exception
+	 */
+	public function getRozetkaCategories() {
+		$this->load->model('extension/feed/rozetka');
+		$categories = $this->model_extension_feed_rozetka->getRozetkaCategories();
+
+		$json = array(
+			'status' => 'success',
+			'categories' => $categories
+		);
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * @throws Exception
+	 */
+	public function getCategoryMappings() {
+		$this->load->model('extension/feed/rozetka');
+		$mappings = $this->model_extension_feed_rozetka->getCategoryMappings();
+
+		$json = array(
+			'status' => 'success',
+			'mappings' => $mappings
+		);
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * @throws Exception
+	 */
+	public function saveCategoryMappings() {
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$mappings_json = $this->request->post['mappings'] ?? '';
+			$mappings = json_decode($mappings_json, true);
+
+			if (is_array($mappings)) {
+				$this->load->model('extension/feed/rozetka');
+				$this->model_extension_feed_rozetka->saveCategoryMappings($mappings);
+				$json['status'] = 'success';
+			} else {
+				$json['error'] = 'Неверный формат данных';
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
 	public function generatePreview() {
 		$this->load->language('extension/feed/rozetka');
 

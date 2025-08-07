@@ -927,3 +927,76 @@ input[type="checkbox"]:checked + .toggle-label .toggle-inner {
     background: rgba(220, 53, 69, 0.2);
     color: #dc3545;
 }
+
+/* Category Mapping Styles */
+.mapping-category-item {
+    padding: 8px 12px;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.mapping-category-item:hover {
+    background: #f8f9fa;
+    border-color: #667eea;
+}
+
+.mapping-category-item.selected {
+    background: #e3f2fd;
+    border-color: #2196f3;
+}
+
+.mapping-category-item.mapped {
+    background: #e8f5e8;
+    border-color: #28a745;
+}
+
+.category-name {
+    font-weight: 600;
+    color: #495057;
+}
+
+.category-path {
+    font-size: 0.85em;
+    color: #6c757d;
+    margin-top: 2px;
+}
+
+.category-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    font-size: 0.7em;
+}
+
+.progress-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mapping-connection {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.btn-remove-mapping {
+    padding: 2px 6px;
+    font-size: 0.8em;
+}
+
+#import-progress .progress {
+    height: 20px;
+}
+
+.panel-controls {
+    margin-top: 10px;
+}

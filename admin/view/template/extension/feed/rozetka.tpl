@@ -50,6 +50,11 @@
                         <i class="fa fa-history"></i> История генераций
                     </a>
                 </li>
+                <li>
+                    <a href="#tab-mapping" data-toggle="tab">
+                        <i class="fa fa-link"></i> Маппинг категорий
+                    </a>
+                </li>
             </ul>
 
             <div class="tab-content modern-tab-content">
@@ -71,6 +76,10 @@
 
                 <div class="tab-pane" id="tab-history">
 					<?php include("rozetka/history.tpl"); ?>
+                </div>
+
+                <div class="tab-pane" id="tab-mapping">
+					<?php include("rozetka/category_mapping.tpl"); ?>
                 </div>
             </div>
         </div>
