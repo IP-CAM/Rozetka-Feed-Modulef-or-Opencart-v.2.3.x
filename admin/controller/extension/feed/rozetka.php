@@ -27,6 +27,11 @@ use Rozetka\CategoriesParser;
  * @uses ControllerExtensionFeedRozetka::clearCache()
  * @uses ControllerExtensionFeedRozetka::getGenerationHistory()
  * @uses ControllerExtensionFeedRozetka::importCategories()
+ * @uses ControllerExtensionFeedRozetka::getShopCategories()
+ * @uses ControllerExtensionFeedRozetka::getRozetkaCategories()
+ * @uses ControllerExtensionFeedRozetka::getCategoryMappings()
+ * @uses ControllerExtensionFeedRozetka::saveCategoryMappings()
+ * @uses ControllerExtensionFeedRozetka::clearCategories()
  */
 
 class ControllerExtensionFeedRozetka extends Controller {
@@ -525,11 +530,12 @@ class ControllerExtensionFeedRozetka extends Controller {
 	public function saveCategoryMappings() {
 		$json = array();
 
+		$this->log->write($this->request->post);
+
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			$mappings_json = $this->request->post['mappings'] ?? '';
-			$mappings = json_decode($mappings_json, true);
+			$mappings = $this->request->post['mappings'] ?? [];
 
 			if (is_array($mappings)) {
 				$this->load->model('extension/feed/rozetka');

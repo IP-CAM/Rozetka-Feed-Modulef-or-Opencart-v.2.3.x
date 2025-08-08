@@ -4,11 +4,6 @@
 			<div class="panel-heading gradient-header">
 				<h3 class="panel-title">
 					<i class="fa fa-link"></i> Маппинг категорий
-					<div class="pull-right">
-						<button type="button" id="btn-update-rozetka-categories" class="btn btn-xs btn-outline-dark">
-							<i class="fa fa-refresh"></i> Обновить категории Rozetka
-						</button>
-					</div>
 				</h3>
 			</div>
 			<div class="panel-body">

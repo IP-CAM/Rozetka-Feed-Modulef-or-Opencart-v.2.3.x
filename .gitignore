@@ -37,7 +37,9 @@
 
 !/admin/view/javascript/
 /admin/view/javascript/*
+!/admin/view/javascript/rozetka/
 !/admin/view/javascript/rozetka.js
+!/admin/view/javascript/boot.js
 
 !/admin/model/
 /admin/model/*
