@@ -1,8 +1,15 @@
 <?php
+/**
+ * Контроллер административной части модуля Rozetka для OpenCart 2.3.
+ *
+ * В новой версии большая часть бизнес‑логики перенесена в сервис
+ * RozetkaAdminService (system/library/RozetkaAdminService.php). Контроллер
+ * отвечает за загрузку языковых файлов, проверку прав, подготовку данных
+ * для шаблона и маршрутизацию AJAX‑запросов. Маршруты и названия
+ * методов сохранены для совместимости с существующим JavaScript.
+ */
 
 use Cart\User;
-use Rozetka\Logger;
-use Rozetka\CategoriesParser;
 
 /**
  * @property Config $config
@@ -35,130 +42,159 @@ use Rozetka\CategoriesParser;
  */
 
 class ControllerExtensionFeedRozetka extends Controller {
+	/**
+	 * @var array
+	 */
+	private $error = array();
 
-	private array $error = array();
-	private RozetkaFeedGenerator $feed_generator;
+	/**
+	 * @var RozetkaFeedGenerator
+	 */
+	private $feed_generator;
 
-	public function __construct(Registry $registry) {
+	/**
+	 * @var RozetkaAdminService
+	 */
+	private $adminService;
+
+	/**
+	 * Конструктор. Инициализирует генератор фида и сервис административной логики.
+	 *
+	 * @param Registry $registry
+	 */
+	public function __construct($registry) {
 		parent::__construct($registry);
-
-		// Загружаем библиотеку генератора
 		require_once(DIR_SYSTEM . 'library/RozetkaFeedGenerator.php');
+		require_once(DIR_SYSTEM . 'library/RozetkaAdminService.php');
+		// Используем собственный экземпляр генератора фида
 		$this->feed_generator = new RozetkaFeedGenerator($registry);
+		// Инициализируем сервис, который инкапсулирует бизнес‑логику
+		$this->adminService = new RozetkaAdminService($registry);
 	}
 
 	/**
+	 * Главная страница настроек модуля. Загружает стили и скрипты, выполняет
+	 * сохранение настроек при POST‑запросе и выводит шаблон.
+	 *
 	 * @throws Exception
 	 */
 	public function index() {
 		$this->load->language('extension/feed/rozetka');
 		$this->document->setTitle($this->language->get('heading_title'));
 		$this->load->model('setting/setting');
-
+		// Сохраняем настройки через стандартный механизм OpenCart
 		if (($this->request->server['REQUEST_METHOD'] == 'POST') && $this->validate()) {
 			$this->model_setting_setting->editSetting('feed_rozetka', $this->request->post);
 			$this->session->data['success'] = $this->language->get('text_success');
 			$this->response->redirect($this->url->link('extension/extension', 'token=' . $this->session->data['token'] . '&type=feed', true));
+			return;
+		}
+		// Подключаем стили и javascript для UI
+		$this->document->addStyle('view/stylesheet/rozetka.css');
+		// Список скриптов для загрузки. Если требуется добавить новый файл, достаточно
+		// включить его в этот массив.
+		$scripts = array(
+			'ApiClient.js',
+			'CategoryMappingManager.js',
+			'Config.js',
+			'ControlsManager.js',
+			'FiltersManager.js',
+			'HistoryManager.js',
+			'ImportExportManager.js',
+			'NotificationManager.js',
+			'SettingsManager.js',
+			'StatisticsManager.js',
+			'Utils.js',
+			'TabSaveManager.js',
+			'RozetkaApp.js'
+		);
+		foreach ($scripts as $script) {
+			$this->document->addScript('view/javascript/rozetka/' . $script);
 		}
 
-		$this->document->addStyle('view/stylesheet/rozetka.css');
-		$this->document->addScript('view/javascript/rozetka/ApiClient.js');
-		$this->document->addScript('view/javascript/rozetka/CategoryMappingManager.js');
-		$this->document->addScript('view/javascript/rozetka/Config.js');
-		$this->document->addScript('view/javascript/rozetka/ControlsManager.js');
-		$this->document->addScript('view/javascript/rozetka/FiltersManager.js');
-		$this->document->addScript('view/javascript/rozetka/HistoryManager.js');
-		$this->document->addScript('view/javascript/rozetka/ImportExportManager.js');
-		$this->document->addScript('view/javascript/rozetka/NotificationManager.js');
-		$this->document->addScript('view/javascript/rozetka/SettingsManager.js');
-		$this->document->addScript('view/javascript/rozetka/StatisticsManager.js');
-		$this->document->addScript('view/javascript/rozetka/Utils.js');
-		$this->document->addScript('view/javascript/rozetka/TabSaveManager.js');
-		$this->document->addScript('view/javascript/rozetka/RozetkaApp.js');
 		$this->document->addScript('view/javascript/rozetka.js');
-
+		// Подготовка данных для шаблона
 		$data = $this->prepareViewData();
-
+		// Добавляем стандартные компоненты
 		$data['header'] = $this->load->controller('common/header');
 		$data['column_left'] = $this->load->controller('common/column_left');
 		$data['footer'] = $this->load->controller('common/footer');
-
+		// Выводим шаблон
 		$this->response->setOutput($this->load->view('extension/feed/rozetka', $data));
 	}
 
 	/**
-	 * Подготовка данных для отображения
+	 * Подготавливает набор данных для передачи в шаблон.
 	 *
+	 * @return array
 	 * @throws Exception
 	 */
-	private function prepareViewData() {
+	private function prepareViewData(): array
+	{
 		$data = array();
-
-		// Обработка ошибок валидации
+		// Обрабатываем ошибки валидации формы
 		$this->setErrorData($data);
-
-		// Настройка breadcrumbs и URLs
+		// Хлебные крошки и URL действия/отмены
 		$this->setBreadcrumbsAndUrls($data);
-
-		// Загрузка настроек модуля
+		// Загружаем значения настроек
 		$this->loadModuleSettings($data);
-
-		// Загрузка справочных данных
+		// Загружаем справочные данные (категории, производители, валюты)
 		$this->loadReferenceData($data);
-
-		// Получение статистики через библиотеку
+		// Получаем статистику через генератор
 		$statistics = $this->feed_generator->getStatistics();
 		$data = array_merge($data, $statistics);
-
-		// URL фида
+		// URL публичного фида
 		$data['feed_url'] = HTTPS_CATALOG . 'index.php?route=extension/feed/rozetka';
-
-		// Языковые переменные
+		// Загружаем языковые переменные
 		$this->setLanguageData($data);
-
 		return $data;
 	}
 
 	/**
-	 * Установка данных об ошибках
+	 * Заполняет массив данными об ошибках из $this->error.
+	 *
+	 * @param array $data
 	 */
-	private function setErrorData(&$data) {
+	private function setErrorData(array &$data): void
+	{
 		$error_fields = array('warning', 'image_width', 'image_height', 'price_range', 'description_length');
-
 		foreach ($error_fields as $field) {
 			$data['error_' . $field] = $this->error[$field] ?? '';
 		}
 	}
 
 	/**
-	 * Настройка breadcrumbs и URLs
+	 * Формирует хлебные крошки и URL действия/отмены для шаблона.
+	 *
+	 * @param array $data
 	 */
-	private function setBreadcrumbsAndUrls(&$data) {
+	private function setBreadcrumbsAndUrls(array &$data): void
+	{
 		$data['breadcrumbs'] = array();
-
 		$data['breadcrumbs'][] = array(
 			'text' => $this->language->get('text_home'),
 			'href' => $this->url->link('common/dashboard', 'token=' . $this->session->data['token'], true)
 		);
-
 		$data['breadcrumbs'][] = array(
 			'text' => $this->language->get('text_extension'),
 			'href' => $this->url->link('extension/extension', 'token=' . $this->session->data['token'] . '&type=feed', true)
 		);
-
 		$data['breadcrumbs'][] = array(
 			'text' => $this->language->get('heading_title'),
 			'href' => $this->url->link('extension/feed/rozetka', 'token=' . $this->session->data['token'], true)
 		);
-
 		$data['action'] = $this->url->link('extension/feed/rozetka', 'token=' . $this->session->data['token'], true);
 		$data['cancel'] = $this->url->link('extension/extension', 'token=' . $this->session->data['token'] . '&type=feed', true);
 	}
 
 	/**
-	 * Загрузка настроек модуля
+	 * Загружает сохранённые настройки модуля в массив $data.
+	 * При наличии POST‑значений они имеют приоритет над сохранёнными.
+	 *
+	 * @param array $data
 	 */
-	private function loadModuleSettings(&$data) {
+	private function loadModuleSettings(array &$data): void
+	{
 		$settings = array(
 			'feed_rozetka_status',
 			'feed_rozetka_company',
@@ -179,7 +215,6 @@ class ControllerExtensionFeedRozetka extends Controller {
 			'feed_rozetka_update_frequency',
 			'feed_rozetka_compress_xml'
 		);
-
 		foreach ($settings as $setting) {
 			if (isset($this->request->post[$setting])) {
 				$data[$setting] = $this->request->post[$setting];
@@ -190,299 +225,130 @@ class ControllerExtensionFeedRozetka extends Controller {
 	}
 
 	/**
-	 * Загрузка справочных данных
+	 * Загружает справочные данные (категории, производители, валюты) в $data.
 	 *
-	 * @throws Exception
+	 * @param array $data
 	 */
-	private function loadReferenceData(&$data) {
+	private function loadReferenceData(array &$data): void
+	{
 		$this->load->model('catalog/category');
 		$this->load->model('catalog/manufacturer');
 		$this->load->model('localisation/currency');
-
 		$data['categories'] = $this->model_catalog_category->getCategories();
 		$data['manufacturers'] = $this->model_catalog_manufacturer->getManufacturers();
 		$data['currencies'] = $this->model_localisation_currency->getCurrencies();
 	}
 
 	/**
-	 * Сохранение настроек конкретного таба
+	 * Обработчик AJAX‑сохранения настроек конкретной вкладки. Проверяет права,
+	 * передаёт работу сервису и возвращает JSON‑ответ.
 	 */
 	public function saveTabSettings() {
 		$this->load->language('extension/feed/rozetka');
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
 			$tab = $this->request->post['tab'] ?? '';
 			$settings = $this->request->post['settings'] ?? array();
-
 			if (empty($tab) || empty($settings)) {
 				$json['error'] = 'Неверные данные для сохранения';
 			} else {
-				try {
-					// Валидация настроек
-					$validation_errors = $this->validateTabSettings($tab, $settings);
-
-					if (!empty($validation_errors)) {
-						$json['errors'] = $validation_errors;
-					} else {
-						// Сохранение настроек
-						if ($tab === 'mapping') {
-							$this->load->model('extension/feed/rozetka');
-							$this->model_extension_feed_rozetka->saveCategoryMappings($settings['category_mappings']);
-
-							$json['success'] = true;
-							$json['message'] = 'Связи категорий успешно сохранены';
-							$this->log->write('Rozetka Feed: Связи категорий сохранены, количество: ' . count($settings['category_mappings']));
-						} else {
-							// Сохранение настроек для других табов
-							$this->load->model('setting/setting');
-
-							// Получаем текущие настройки
-							$current_settings = $this->model_setting_setting->getSetting('feed_rozetka');
-
-							// Обновляем только настройки конкретного таба
-							foreach ($settings as $key => $value) {
-								$setting_key = 'feed_rozetka_' . $key;
-
-								// Всегда сохраняем значение, даже если это пустой массив
-								$current_settings[$setting_key] = $value;
-							}
-
-							// Для таба фильтров убеждаемся, что массивы исключений всегда установлены
-							if ($tab === 'filters') {
-								if (!isset($settings['exclude_categories'])) {
-									$current_settings['feed_rozetka_exclude_categories'] = array();
-								}
-								if (!isset($settings['exclude_manufacturers'])) {
-									$current_settings['feed_rozetka_exclude_manufacturers'] = array();
-								}
-							}
-
-							// Сохраняем обновленные настройки
-							$this->model_setting_setting->editSetting('feed_rozetka', $current_settings);
-
-							$json['success'] = true;
-							if ($tab === 'settings') {
-								$json['message'] = 'Основные настройки успешно сохранены';
-							} elseif ($tab === 'filters') {
-								$json['message'] = 'Фильтры товаров успешно сохранены';
-							}
-						}
-					}
-				} catch (Exception $e) {
-					$json['error'] = 'Ошибка при сохранении: ' . $e->getMessage();
-					$this->log->write('Rozetka Feed Save Error: ' . $e->getMessage());
-				}
+				$json = $this->adminService->saveTabSettings($tab, $settings);
 			}
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Валидация настроек таба
+	 * Обёртка над сервисом для валидации настроек вкладки. Остаётся
+	 * приватной, как и в исходном контроллере. Нужна для совместимости,
+	 * если где‑то в контроллере будет использоваться.
+	 *
+	 * @param string $tab
+	 * @param array  $settings
+	 * @return array
 	 */
-	private function validateTabSettings($tab, $settings) {
-		$errors = array();
-
-		if ($tab === 'settings') {
-			// Валидация основных настроек
-			if (isset($settings['image_width'])) {
-				$width = (int)$settings['image_width'];
-				if ($width < 100 || $width > 2000) {
-					$errors['image_width'] = 'Ширина изображения должна быть от 100 до 2000 пикселей';
-				}
-			}
-
-			if (isset($settings['image_height'])) {
-				$height = (int)$settings['image_height'];
-				if ($height < 100 || $height > 2000) {
-					$errors['image_height'] = 'Высота изображения должна быть от 100 до 2000 пикселей';
-				}
-			}
-
-			if (isset($settings['description_length'])) {
-				$length = (int)$settings['description_length'];
-				if ($length < 100 || $length > 10000) {
-					$errors['description_length'] = 'Длина описания должна быть от 100 до 10000 символов';
-				}
-			}
-		} elseif ($tab === 'filters') {
-			// Валидация фильтров
-			if (isset($settings['min_price']) && isset($settings['max_price'])) {
-				$min_price = (float)$settings['min_price'];
-				$max_price = (float)$settings['max_price'];
-
-				if ($min_price > 0 && $max_price > 0 && $min_price >= $max_price) {
-					$errors['price_range'] = 'Минимальная цена не может быть больше максимальной';
-				}
-			}
-		} elseif ($tab === 'mapping') {
-			// Валидация маппинга
-			if (!isset($settings['category_mappings']) || !is_array($settings['category_mappings'])) {
-				$errors['category_mappings'] = 'Некорректные данные маппинга категорий';
-			}
-		}
-
-		return $errors;
+	private function validateTabSettings(string $tab, array $settings): array
+	{
+		return $this->adminService->validateTabSettings($tab, $settings);
 	}
 
 	/**
-	 * Удаление связи категорий
+	 * Обработчик удаления одной связи категории. Использует сервис.
 	 */
 	public function removeCategoryMapping() {
 		$this->load->language('extension/feed/rozetka');
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
 			$shop_category_id = $this->request->post['shop_category_id'] ?? 0;
-
 			if (empty($shop_category_id)) {
 				$json['error'] = 'Некорректный ID категории';
 			} else {
-				try {
-					$this->load->model('extension/feed/rozetka');
-
-					// Получаем текущие маппинги
-					$mappings = $this->model_extension_feed_rozetka->getCategoryMappings();
-
-					// Удаляем нужный маппинг
-					$filtered_mappings = array_filter($mappings, function($mapping) use ($shop_category_id) {
-						return $mapping['shop_category_id'] != $shop_category_id;
-					});
-
-					// Сохраняем обновленный список
-					$this->model_extension_feed_rozetka->saveCategoryMappings($filtered_mappings);
-
-					$json['success'] = true;
-					$json['message'] = 'Связь категории удалена';
-
-					$this->log->write('Rozetka Feed: Удалена связь категории ID: ' . $shop_category_id);
-
-				} catch (Exception $e) {
-					$json['error'] = 'Ошибка при удалении связи: ' . $e->getMessage();
-					$this->log->write('Rozetka Feed Remove Mapping Error: ' . $e->getMessage());
-				}
+				$json = $this->adminService->removeCategoryMapping((int)$shop_category_id);
 			}
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Очистка всех связей категорий
+	 * Обработчик удаления всех связей категорий.
 	 */
 	public function clearAllMappings() {
 		$this->load->language('extension/feed/rozetka');
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			try {
-				$this->load->model('extension/feed/rozetka');
-				$this->model_extension_feed_rozetka->saveCategoryMappings(array()); // Сохраняем пустой массив
-
-				$json['success'] = true;
-				$json['message'] = 'Все связи категорий удалены';
-
-				$this->log->write('Rozetka Feed: Все связи категорий удалены администратором');
-
-			} catch (Exception $e) {
-				$json['error'] = 'Ошибка при удалении всех связей: ' . $e->getMessage();
-				$this->log->write('Rozetka Feed Clear All Mappings Error: ' . $e->getMessage());
-			}
+			$json = $this->adminService->clearAllMappings();
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Тест генерации фида через библиотеку
+	 * Выполняет тестовую генерацию фида и возвращает результат.
 	 */
 	public function testGeneration() {
 		$this->load->language('extension/feed/rozetka');
-
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			// Используем библиотеку для тестирования
 			$test_limit = isset($this->request->get['limit']) ? (int)$this->request->get['limit'] : 10;
-			$result = $this->feed_generator->testGeneration($test_limit);
-
-			// Добавляем информацию о PHP настройках
-			if ($result['status'] == 'success') {
-				$result['php_info'] = array(
-					'memory_limit' => ini_get('memory_limit'),
-					'max_execution_time' => ini_get('max_execution_time'),
-					'php_version' => PHP_VERSION
-				);
-			}
-
-			$json = $result;
+			$json = $this->adminService->testGeneration($test_limit);
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Получение истории генераций
+	 * Возвращает историю генераций фида.
 	 */
 	public function getGenerationHistory() {
 		$this->load->language('extension/feed/rozetka');
-
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
 			$limit = isset($this->request->get['limit']) ? (int)$this->request->get['limit'] : 20;
-
-			// Получаем логгер из библиотеки через рефлексию или создаем новый экземпляр
-			$logger = new Logger($this->registry);
-			$history = $logger->getLogHistory($limit);
-
-			// Форматируем данные для отображения
-			$formatted_history = array();
-			foreach ($history as $log) {
-				$formatted_history[] = array(
-					'id' => $log['log_id'],
-					'date' => date('d.m.Y H:i:s', strtotime($log['date_generated'])),
-					'status' => $log['status'],
-					'products_count' => $log['products_count'],
-					'offers_count' => $log['offers_count'],
-					'generation_time' => $log['generation_time'],
-					'file_size' => $log['file_size'],
-					'memory_used' => $log['memory_used'],
-					'error_message' => $log['error_message'],
-					'warnings' => $log['warnings'] ? json_decode($log['warnings'], true) : array()
-				);
-			}
-
-			$json = array(
-				'status' => 'success',
-				'history' => $formatted_history
-			);
+			$json = $this->adminService->getGenerationHistory($limit);
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Настройка языковых переменных
+	 * Загружает языковые строки для шаблона.
+	 *
+	 * @param array $data
 	 */
-	private function setLanguageData(&$data) {
+	private function setLanguageData(array &$data): void
+	{
 		$language_keys = array(
 			'heading_title', 'text_edit', 'text_enabled', 'text_disabled',
 			'button_save', 'button_cancel', 'entry_status', 'entry_shop_name',
@@ -492,7 +358,6 @@ class ControllerExtensionFeedRozetka extends Controller {
 			'entry_max_price', 'entry_categories', 'entry_manufacturers',
 			'entry_update_frequency', 'entry_compress_xml'
 		);
-
 		$help_keys = array(
 			'help_shop_name', 'help_company', 'help_currency', 'help_image_width',
 			'help_image_height', 'help_image_quality', 'help_description',
@@ -500,48 +365,43 @@ class ControllerExtensionFeedRozetka extends Controller {
 			'help_min_price', 'help_max_price', 'help_categories', 'help_manufacturers',
 			'help_update_frequency', 'help_compress_xml', 'help_feed_url'
 		);
-
 		$button_keys = array(
 			'button_test', 'button_preview', 'button_generate', 'button_clear_cache',
 			'button_export', 'button_import', 'button_history'
 		);
-
 		foreach (array_merge($language_keys, $help_keys, $button_keys) as $key) {
 			$data[$key] = $this->language->get($key);
 		}
 	}
 
 	/**
-	 * Валидация формы
+	 * Общая валидация формы (POST‑запрос при сохранении настроек).
+	 * Использует генератор фида для проверки параметров.
+	 *
+	 * @return bool
 	 */
 	protected function validate(): bool
 	{
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$this->error['warning'] = $this->language->get('error_permission');
 		}
-
-		// Используем валидацию из библиотеки
+		// Подготавливаем массив настроек для проверки (убираем префикс)
 		$settings = array();
-
-		// Подготавливаем настройки для валидации (убираем префикс feed_rozetka_)
 		foreach ($this->request->post as $key => $value) {
 			if (strpos($key, 'feed_rozetka_') === 0) {
 				$clean_key = str_replace('feed_rozetka_', '', $key);
 				$settings[$clean_key] = $value;
 			}
 		}
-
 		$validation_errors = $this->feed_generator->validateSettings($settings);
-
 		foreach ($validation_errors as $field => $message) {
 			$this->error[$field] = $message;
 		}
-
 		return !$this->error;
 	}
 
 	/**
-	 * Установка модуля (создание необходимых таблиц)
+	 * Устанавливает таблицы модуля при установке.
 	 *
 	 * @throws Exception
 	 */
@@ -551,482 +411,192 @@ class ControllerExtensionFeedRozetka extends Controller {
 	}
 
 	/**
-	 * Удаление модуля
+	 * Удаляет настройки и таблицы модуля при удалении.
 	 *
 	 * @throws Exception
 	 */
 	public function uninstall() {
 		$this->load->model('setting/setting');
-
-		// Удаляем все настройки модуля
+		// Удаляем все настройки
 		$this->model_setting_setting->deleteSetting('feed_rozetka');
-
 		// Очищаем кэш
 		$this->feed_generator->clearCache();
-
 		$this->load->model('extension/feed/rozetka');
-
 		$this->model_extension_feed_rozetka->uninstall();
 	}
 
 	/**
-	 * Получение категорий магазина с поиском (лимит 10)
+	 * Возвращает категории магазина для автодополнения.
 	 */
 	public function getShopCategories() {
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			$this->load->model('catalog/category');
-
 			$search = $this->request->get['search'] ?? '';
-			$limit = 10; // Фиксированный лимит
-
-			if (empty($search)) {
-				$json = array(
-					'status' => 'success',
-					'categories' => array(),
-					'total' => 0
-				);
-			} else {
-				// Получаем категории с поиском
-				$filter_data = array(
-					'filter_name' => $search,
-					'start' => 0,
-					'limit' => $limit
-				);
-
-				$categories = $this->model_catalog_category->getCategories($filter_data);
-				$total = $this->model_catalog_category->getTotalCategories($filter_data);
-
-				// Дополняем категории информацией о пути и уровне
-				$enriched_categories = array();
-				foreach ($categories as $category) {
-					$category['level'] = $this->calculateCategoryLevel($category['category_id']);
-					$category['path'] = $this->buildCategoryPath($category['category_id']);
-					$enriched_categories[] = $category;
-				}
-
-				$json = array(
-					'status' => 'success',
-					'categories' => $enriched_categories,
-					'total' => $total
-				);
-			}
+			$limit = 10;
+			$json = $this->adminService->getShopCategories($search, $limit);
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Получение категорий Rozetka с поиском (лимит 10)
+	 * Возвращает категории Rozetka для автодополнения.
 	 */
 	public function getRozetkaCategories() {
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			$this->load->model('extension/feed/rozetka');
-
 			$search = $this->request->get['search'] ?? '';
-			$limit = 10; // Фиксированный лимит
-
-			if (empty($search)) {
-				$json = array(
-					'status' => 'success',
-					'categories' => array(),
-					'total' => 0
-				);
-			} else {
-				$categories = $this->model_extension_feed_rozetka->getRozetkaCategories(array(
-					'search' => $search,
-					'start' => 0,
-					'limit' => $limit
-				));
-
-				$total = $this->model_extension_feed_rozetka->getTotalRozetkaCategories($search);
-
-				$json = array(
-					'status' => 'success',
-					'categories' => $categories,
-					'total' => $total
-				);
-			}
+			$limit = 10;
+			$json = $this->adminService->getRozetkaCategories($search, $limit);
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Вычисление уровня категории
+	 * Вычисляет уровень категории магазина. Оставлен для совместимости,
+	 * но вся логика находится в сервисе.
 	 */
 	private function calculateCategoryLevel($category_id, $level = 1) {
-		$this->load->model('catalog/category');
-		$category = $this->model_catalog_category->getCategory($category_id);
-
-		if (!$category || !$category['parent_id']) {
-			return $level;
-		}
-
-		return $this->calculateCategoryLevel($category['parent_id'], $level + 1);
+		return $this->adminService->calculateCategoryLevel($category_id, $level);
 	}
 
 	/**
-	 * Построение пути категории
+	 * Построение пути категории. Использует сервис.
 	 */
 	private function buildCategoryPath($category_id) {
-		$this->load->model('catalog/category');
-		$path_parts = array();
-		$current_id = $category_id;
-
-		while ($current_id) {
-			$category = $this->model_catalog_category->getCategory($current_id);
-			if (!$category) break;
-
-			array_unshift($path_parts, $category['name']);
-			$current_id = $category['parent_id'];
-		}
-
-		return implode(' > ', $path_parts);
+		return $this->adminService->buildCategoryPath($category_id);
 	}
 
 	/**
-	 * Автоматический маппинг категорий
+	 * Автоматическое сопоставление категорий магазина с Rozetka.
 	 */
 	public function autoMapCategories() {
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			try {
-				$this->load->model('extension/feed/rozetka');
-				$this->load->model('catalog/category');
-
-				// Получаем все категории магазина
-				$shopCategories = $this->model_catalog_category->getCategories(array('limit' => 1000));
-
-				// Получаем все категории Rozetka
-				$rozetkaCategories = $this->model_extension_feed_rozetka->getRozetkaCategories(array('limit' => 10000));
-
-				$mappings = array();
-				$threshold = 0.7; // Порог схожести
-
-				foreach ($shopCategories as $shopCategory) {
-					$bestMatch = null;
-					$bestScore = 0;
-
-					foreach ($rozetkaCategories as $rozetkaCategory) {
-						// Вычисляем схожесть названий
-						$score = $this->calculateSimilarity($shopCategory['name'], $rozetkaCategory['name']);
-
-						if ($score > $bestScore && $score >= $threshold) {
-							$bestScore = $score;
-							$bestMatch = $rozetkaCategory;
-						}
-					}
-
-					if ($bestMatch) {
-						$mappings[] = array(
-							'shop_category_id' => $shopCategory['category_id'],
-							'shop_category_name' => $shopCategory['name'],
-							'rozetka_category_id' => $bestMatch['category_id'],
-							'rozetka_category_name' => $bestMatch['name'],
-							'rozetka_category_full_name' => $bestMatch['full_name'],
-							'confidence' => round($bestScore * 100)
-						);
-					}
-				}
-
-				$json = array(
-					'status' => 'success',
-					'mappings' => $mappings,
-					'total_found' => count($mappings)
-				);
-
-			} catch (Exception $e) {
-				$json = array(
-					'status' => 'error',
-					'error' => $e->getMessage()
-				);
-			}
+			$json = $this->adminService->autoMapCategories();
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Вычисление схожести строк
+	 * Импорт категорий из JSON файла. Передаёт файл в сервис, который
+	 * производит все проверки и импорт.
 	 */
-	private function calculateSimilarity($str1, $str2) {
-		$str1 = mb_strtolower(trim($str1), 'UTF-8');
-		$str2 = mb_strtolower(trim($str2), 'UTF-8');
-
-		if ($str1 === $str2) {
-			return 1.0;
-		}
-
-		// Используем алгоритм Левенштейна
-		$maxLen = max(mb_strlen($str1, 'UTF-8'), mb_strlen($str2, 'UTF-8'));
-		if ($maxLen === 0) {
-			return 0;
-		}
-
-		$distance = levenshtein($str1, $str2);
-		return 1 - ($distance / $maxLen);
-	}
-
-	public function importCategories()
-	{
+	public function importCategories() {
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$json = array(
-				'success' => false,
-				'message' => $this->language->get('error_permission')
-			);
+			$json['success'] = false;
+			$json['message'] = $this->language->get('error_permission');
 		} else {
-			try {
-				// Проверяем, что файл был загружен
-				if (!isset($_FILES['categories_file']) || $_FILES['categories_file']['error'] !== UPLOAD_ERR_OK) {
-					throw new Exception('Файл не был загружен или произошла ошибка при загрузке');
-				}
-
-				$uploadedFile = $_FILES['categories_file'];
-
-				// Проверяем размер файла (максимум 10MB)
-				if ($uploadedFile['size'] > 10 * 1024 * 1024) {
-					throw new Exception('Размер файла превышает 10MB');
-				}
-
-				// Проверяем расширение
-				$fileExtension = strtolower(pathinfo($uploadedFile['name'], PATHINFO_EXTENSION));
-				if ($fileExtension !== 'json') {
-					throw new Exception('Поддерживаются только JSON файлы');
-				}
-
-				// Читаем содержимое файла
-				$fileContent = file_get_contents($uploadedFile['tmp_name']);
-				if ($fileContent === false) {
-					throw new Exception('Не удалось прочитать содержимое файла');
-				}
-
-				// Парсим JSON
-				$categories = json_decode($fileContent, true);
-				if (json_last_error() !== JSON_ERROR_NONE) {
-					throw new Exception('Некорректный JSON формат: ' . json_last_error_msg());
-				}
-
-				// Валидируем структуру данных
-				$validationResult = $this->validateCategoriesData($categories);
-				if (!$validationResult['valid']) {
-					throw new Exception($validationResult['error']);
-				}
-
-				// Импортируем в базу данных
-				$this->load->model('extension/feed/rozetka');
-				$importResult = $this->model_extension_feed_rozetka->importCategoriesFromArray($categories);
-
-				$json = array(
-					'success' => true,
-					'total_categories' => count($categories),
-					'imported_categories' => $importResult['imported'],
-					'updated_categories' => $importResult['updated'],
-					'message' => "Успешно импортировано категорий: {$importResult['imported']}, обновлено: {$importResult['updated']}"
-				);
-
-				// Логируем успешный импорт
-				$this->log->write('Rozetka Categories: Импортировано ' . count($categories) . ' категорий из JSON файла');
-
-			} catch (Exception $e) {
-				$json = array(
-					'success' => false,
-					'message' => $e->getMessage()
-				);
-
-				// Логируем ошибку
-				$this->log->write('Rozetka Categories Import Error: ' . $e->getMessage());
+			$file = $_FILES['categories_file'] ?? null;
+			if (!$file) {
+				$json['success'] = false;
+				$json['message'] = 'Файл не был загружен или отсутствует';
+			} else {
+				$json = $this->adminService->importCategories($file);
 			}
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Валидация данных категорий
-	 */
-	private function validateCategoriesData(array $categories): array
-	{
-		if (empty($categories)) {
-			return ['valid' => false, 'error' => 'Файл не содержит категорий'];
-		}
-
-		if (!is_array($categories)) {
-			return ['valid' => false, 'error' => 'Неверная структура данных - ожидается массив'];
-		}
-
-		$requiredFields = ['categoryId', 'name', 'fullName', 'url', 'level'];
-
-		foreach ($categories as $index => $category) {
-			if (!is_array($category)) {
-				return ['valid' => false, 'error' => "Категория #$index имеет неверный формат"];
-			}
-
-			foreach ($requiredFields as $field) {
-				if (!isset($category[$field]) || empty($category[$field])) {
-					return ['valid' => false, 'error' => "Категория #$index: отсутствует поле '$field'"];
-				}
-			}
-
-			// Проверяем типы данных
-			if (!is_string($category['categoryId']) && !is_numeric($category['categoryId'])) {
-				return ['valid' => false, 'error' => "Категория #$index: categoryId должен быть строкой или числом"];
-			}
-
-			if (!is_int($category['level']) || $category['level'] < 1 || $category['level'] > 10) {
-				return ['valid' => false, 'error' => "Категория #$index: level должен быть числом от 1 до 10"];
-			}
-
-			if (!filter_var($category['url'], FILTER_VALIDATE_URL)) {
-				return ['valid' => false, 'error' => "Категория #$index: некорректный URL"];
-			}
-		}
-
-		return ['valid' => true];
-	}
-
-	/**
-	 * @throws Exception
+	 * Возвращает текущие сопоставления категорий.
 	 */
 	public function getCategoryMappings() {
-		$this->load->model('extension/feed/rozetka');
-		$mappings = $this->model_extension_feed_rozetka->getCategoryMappings();
-
-		$json = array(
-			'status' => 'success',
-			'mappings' => $mappings
-		);
-
+		$json = array();
+		try {
+			$json = $this->adminService->getCategoryMappings();
+		} catch (Exception $e) {
+			$json['status'] = 'error';
+			$json['error'] = $e->getMessage();
+		}
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * @throws Exception
+	 * Сохраняет массив сопоставлений категорий, полученных от клиента.
 	 */
 	public function saveCategoryMappings() {
 		$json = array();
-
+		// Логируем полученные данные для совместимости с исходным контроллером
 		$this->log->write($this->request->post);
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
 			$mappings = $this->request->post['mappings'] ?? [];
-
-			if (is_array($mappings)) {
-				$this->load->model('extension/feed/rozetka');
-				$this->model_extension_feed_rozetka->saveCategoryMappings($mappings);
-				$json['status'] = 'success';
-			} else {
+			if (!is_array($mappings)) {
 				$json['error'] = 'Неверный формат данных';
+			} else {
+				$json = $this->adminService->saveCategoryMappings($mappings);
 			}
 		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function clearCategories()
-	{
-		$json = array();
-
-		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$json['error'] = $this->language->get('error_permission');
-		} else {
-			try {
-				$this->load->model('extension/feed/rozetka');
-				$this->model_extension_feed_rozetka->clearRozetkaCategories();
-
-				$json['success'] = true;
-				$json['message'] = 'Все категории успешно удалены';
-
-				$this->log->write('Rozetka Categories: Все категории удалены администратором');
-			} catch (Exception $e) {
-				$json['error'] = 'Ошибка при удалении категорий: ' . $e->getMessage();
-			}
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function generatePreview() {
-		$this->load->language('extension/feed/rozetka');
-
-		$json = array();
-
-		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
-			$json['error'] = $this->language->get('error_permission');
-		} else {
-			$preview_limit = isset($this->request->get['limit']) ? (int)$this->request->get['limit'] : 5;
-			$json = $this->feed_generator->generatePreview($preview_limit);
-		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Получение статистики через библиотеку
+	 * Удаляет все категории Rozetka.
+	 */
+	public function clearCategories() {
+		$json = array();
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$json = $this->adminService->clearCategories();
+		}
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Генерирует предварительный просмотр фида.
+	 */
+	public function generatePreview() {
+		$json = array();
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$limit = isset($this->request->get['limit']) ? (int)$this->request->get['limit'] : 5;
+			$json = $this->adminService->generatePreview($limit);
+		}
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Возвращает статистику фида.
 	 */
 	public function getStatistics() {
-		$this->load->language('extension/feed/rozetka');
-
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			$json = $this->feed_generator->getStatistics();
-			$json['status'] = 'success';
+			$json = $this->adminService->getStatistics();
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
-	 * Очистка кэша через библиотеку
+	 * Очищает кэш данных генератора.
 	 */
-	public function clearCache()
-	{
-		$this->load->language('extension/feed/rozetka');
-
+	public function clearCache() {
 		$json = array();
-
 		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
 			$json['error'] = $this->language->get('error_permission');
 		} else {
-			$deleted_files = $this->feed_generator->clearCache();
-
-			if ($deleted_files >= 0) {
-				$json['success'] = "Кэш успешно очищен. Удалено файлов: $deleted_files";
-				$json['status'] = 'success';
-				$json['deleted_files'] = $deleted_files;
-
-				$this->log->write('Rozetka Feed: Кеш очищен администратором');
-			} else {
-				$json['error'] = 'Ошибка при очистке кэша';
-			}
+			$json = $this->adminService->clearCache();
 		}
-
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 	}

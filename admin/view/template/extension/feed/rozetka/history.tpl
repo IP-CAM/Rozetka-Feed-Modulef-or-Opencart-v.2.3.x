@@ -6,7 +6,7 @@
 				<h3 class="panel-title">
 					<i class="fa fa-history"></i> История генераций фида
 					<div class="pull-right">
-						<button type="button" id="btn-refresh-history" class="btn btn-xs btn-outline-light">
+						<button type="button" id="btn-refresh-history" class="btn btn-xs btn-outline-dark">
 							<i class="fa fa-refresh"></i> Обновить
 						</button>
 						<button type="button" id="btn-clear-history" class="btn btn-xs btn-outline-danger">

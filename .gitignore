@@ -54,5 +54,6 @@
 /system/library/*
 !/system/library/Rozetka/
 !/system/library/RozetkaFeedGenerator.php
+!/system/library/RozetkaAdminService.php
 
 /catalog
