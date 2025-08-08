@@ -63,6 +63,7 @@
 		},
 
 		ENDPOINTS: {
+			autoMapCategories: 'extension/feed/rozetka/autoMapCategories',
 			getStatistics: 'extension/feed/rozetka/getStatistics',
 			testGeneration: 'extension/feed/rozetka/testGeneration',
 			generatePreview: 'extension/feed/rozetka/generatePreview',
