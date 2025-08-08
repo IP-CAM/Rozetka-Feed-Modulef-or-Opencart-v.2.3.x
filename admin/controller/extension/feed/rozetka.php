@@ -61,8 +61,20 @@ class ControllerExtensionFeedRozetka extends Controller {
 			$this->response->redirect($this->url->link('extension/extension', 'token=' . $this->session->data['token'] . '&type=feed', true));
 		}
 
-		$this->document->addStyle('view/stylesheet/rozetka.css');
-		$this->document->addScript('view/javascript/rozetka.js');
+               $this->document->addStyle('view/stylesheet/rozetka.css');
+               $this->document->addScript('view/javascript/rozetka/config.js');
+               $this->document->addScript('view/javascript/rozetka/language.js');
+               $this->document->addScript('view/javascript/rozetka/utils.js');
+               $this->document->addScript('view/javascript/rozetka/notification.js');
+               $this->document->addScript('view/javascript/rozetka/api-client.js');
+               $this->document->addScript('view/javascript/rozetka/statistics.js');
+               $this->document->addScript('view/javascript/rozetka/controls.js');
+               $this->document->addScript('view/javascript/rozetka/settings.js');
+               $this->document->addScript('view/javascript/rozetka/filters.js');
+               $this->document->addScript('view/javascript/rozetka/history.js');
+               $this->document->addScript('view/javascript/rozetka/mapping.js');
+               $this->document->addScript('view/javascript/rozetka/import-export.js');
+               $this->document->addScript('view/javascript/rozetka/app.js');
 
 		$data = $this->prepareViewData();
 
