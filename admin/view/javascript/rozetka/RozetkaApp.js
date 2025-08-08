@@ -10,6 +10,7 @@ const RozetkaApp = {
 	HistoryManager,
 	CategoryMappingManager,
 	ImportExportManager,
+	TabSaveManager,
 
 	init() {
 		$(document).ready(() => {
@@ -27,6 +28,7 @@ const RozetkaApp = {
 		HistoryManager.init();
 		CategoryMappingManager.init();
 		ImportExportManager.init();
+		TabSaveManager.init();
 	},
 
 	bindGlobalEvents() {

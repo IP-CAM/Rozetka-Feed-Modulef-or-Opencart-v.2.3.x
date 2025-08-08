@@ -158,11 +158,11 @@
                                 <div class="panel-heading">
                                     <h4><i class="fa fa-check-circle"></i> Установленные связи (<span id="mappings-count">0</span>)</h4>
                                     <div class="pull-right">
-                                        <button type="button" class="btn btn-sm btn-success" id="btn-save-mappings">
-                                            <i class="fa fa-save"></i> Сохранить все связи
-                                        </button>
                                         <button type="button" class="btn btn-sm btn-warning" id="btn-auto-map">
                                             <i class="fa fa-magic"></i> Автоматический маппинг
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-info" id="btn-clear-mappings">
+                                            <i class="fa fa-trash"></i> Очистить все связи
                                         </button>
                                     </div>
                                 </div>

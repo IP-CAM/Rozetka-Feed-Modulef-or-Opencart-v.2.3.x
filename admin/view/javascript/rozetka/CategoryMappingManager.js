@@ -87,8 +87,8 @@ const CategoryMappingManager = {
 		});
 
 		// Other events
-		$('#btn-save-mappings').on('click', () => this.saveMappings());
 		$('#btn-auto-map').on('click', () => this.autoMapCategories());
+		$('#btn-clear-mappings').on('click', () => this.clearAllMappingsFromDB());
 		$('#btn-upload-categories').on('click', () => this.uploadCategories());
 		$('#btn-clear-categories').on('click', () => this.clearCategories());
 		$('#btn-download-sample').on('click', () => this.downloadSample());
@@ -441,51 +441,120 @@ const CategoryMappingManager = {
 
 		if (this.mappings.length === 0) {
 			tbody.html(`
-               <tr>
-                   <td colspan="3" class="text-center text-muted">
-                       <i class="fa fa-info-circle"></i> Связи не установлены
-                   </td>
-               </tr>
-           `);
+           <tr>
+               <td colspan="3" class="text-center text-muted">
+                   <i class="fa fa-info-circle"></i> Связи не установлены
+               </td>
+           </tr>
+       `);
 			return;
 		}
 
 		const html = this.mappings.map((mapping, index) => `
-           <tr>
-               <td>
-                   <strong>${Utils.escapeHtml(mapping.shop_category_name)}</strong><br>
-                   <small class="text-muted">ID: ${mapping.shop_category_id}</small>
-               </td>
-               <td>
-                   <strong>${Utils.escapeHtml(mapping.rozetka_category_name)}</strong><br>
-                   <small class="text-muted">${Utils.escapeHtml(mapping.rozetka_category_full_name)}</small>
-               </td>
-               <td>
-                   <button class="btn btn-xs btn-danger" onclick="RozetkaApp.CategoryMappingManager.removeMapping(${index})">
-                       <i class="fa fa-trash"></i>
-                   </button>
-               </td>
-           </tr>
-       `).join('');
+       <tr data-mapping-id="${mapping.shop_category_id}">
+           <td>
+               <strong>${Utils.escapeHtml(mapping.shop_category_name)}</strong><br>
+               <small class="text-muted">ID: ${mapping.shop_category_id}</small>
+           </td>
+           <td>
+               <strong>${Utils.escapeHtml(mapping.rozetka_category_name)}</strong><br>
+               <small class="text-muted">${Utils.escapeHtml(mapping.rozetka_category_full_name)}</small>
+           </td>
+           <td>
+               <button class="btn btn-xs btn-danger btn-remove-mapping" 
+                       data-shop-category-id="${mapping.shop_category_id}"
+                       data-shop-category-name="${Utils.escapeHtml(mapping.shop_category_name)}">
+                   <i class="fa fa-trash"></i>
+               </button>
+           </td>
+       </tr>
+   `).join('');
 
 		tbody.html(html);
-	},
 
-	removeMapping(index) {
-		const mapping = this.mappings[index];
-		this.mappings.splice(index, 1);
-		this.renderMappings();
-
-		// Убираем класс mapped с категории
-		$(`.shop-category[data-id="${mapping.shop_category_id}"]`).removeClass('mapped');
-
-		NotificationManager.info('Связь удалена');
+		// Привязываем обработчики удаления
+		tbody.find('.btn-remove-mapping').on('click', (e) => {
+			const btn = $(e.currentTarget);
+			const shopCategoryId = btn.data('shop-category-id');
+			const shopCategoryName = btn.data('shop-category-name');
+			this.removeMappingFromDB(shopCategoryId, shopCategoryName);
+		});
 	},
 
 	clearSelections() {
 		$('.category-item-lazy').removeClass('selected');
 		this.selectedShopCategory = null;
 		this.selectedRozetkaCategory = null;
+	},
+
+	// Удаляем старый метод removeMapping, заменяем на новый
+	async removeMappingFromDB(shopCategoryId, shopCategoryName) {
+		if (!confirm(`Вы уверены, что хотите удалить связь для категории "${shopCategoryName}"?`)) {
+			return;
+		}
+
+		const btn = $(`.btn-remove-mapping[data-shop-category-id="${shopCategoryId}"]`);
+		const originalHtml = btn.html();
+
+		btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i>');
+
+		try {
+			const response = await ApiClient.post(Config.ENDPOINTS.removeCategoryMapping, {
+				shop_category_id: shopCategoryId
+			});
+
+			if (response.success) {
+				// Удаляем из локального массива
+				this.mappings = this.mappings.filter(m => m.shop_category_id != shopCategoryId);
+
+				// Перерендериваем таблицу
+				this.renderMappings();
+
+				// Убираем класс mapped с категории
+				$(`.shop-category[data-id="${shopCategoryId}"]`).removeClass('mapped');
+
+				NotificationManager.success(response.message);
+			} else {
+				throw new Error(response.error || 'Ошибка при удалении связи');
+			}
+		} catch (error) {
+			NotificationManager.error(`Ошибка удаления связи: ${error.message}`);
+			btn.prop('disabled', false).html(originalHtml);
+		}
+	},
+
+	async clearAllMappingsFromDB() {
+		if (!confirm('Вы уверены, что хотите удалить ВСЕ связи категорий? Это действие необратимо!')) {
+			return;
+		}
+
+		const btn = $('#btn-clear-mappings');
+		const originalHtml = btn.html();
+
+		btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Удаление...');
+
+		try {
+			const response = await ApiClient.post(Config.ENDPOINTS.clearAllMappings);
+
+			if (response.success) {
+				// Очищаем локальный массив
+				this.mappings = [];
+
+				// Перерендериваем таблицу
+				this.renderMappings();
+
+				// Убираем класс mapped со всех категорий
+				$('.category-item-lazy.mapped').removeClass('mapped');
+
+				NotificationManager.success(response.message);
+			} else {
+				throw new Error(response.error || 'Ошибка при удалении всех связей');
+			}
+		} catch (error) {
+			NotificationManager.error(`Ошибка удаления всех связей: ${error.message}`);
+		} finally {
+			btn.prop('disabled', false).html(originalHtml);
+		}
 	},
 
 	async autoMapCategories() {
@@ -499,26 +568,89 @@ const CategoryMappingManager = {
 		btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Поиск соответствий...');
 
 		try {
-			const response = await ApiClient.post(Config.ENDPOINTS.autoMapCategories);
+			// Сначала получаем все категории магазина
+			const shopCategoriesResponse = await ApiClient.get(Config.ENDPOINTS.getShopCategories, {
+				search: '', // Получаем все категории
+				limit: 1000
+			});
 
-			if (response.status === 'success') {
-				const newMappings = response.mappings || [];
-
-				newMappings.forEach(mapping => {
-					const existingIndex = this.mappings.findIndex(m =>
-						m.shop_category_id == mapping.shop_category_id
-					);
-
-					if (existingIndex === -1) {
-						this.mappings.push(mapping);
-					}
-				});
-
-				this.renderMappings();
-				NotificationManager.success(`Автоматически найдено ${newMappings.length} соответствий`);
-			} else {
-				throw new Error(response.error || 'Ошибка автоматического маппинга');
+			if (shopCategoriesResponse.status !== 'success') {
+				throw new Error('Ошибка получения категорий магазина');
 			}
+
+			const shopCategories = shopCategoriesResponse.categories;
+			const newMappings = [];
+			let processedCount = 0;
+
+			// Показываем прогресс
+			const progressHtml = `<i class="fa fa-spinner fa-spin"></i> Обработано: <span id="progress-count">0</span>/${shopCategories.length}`;
+			btn.html(progressHtml);
+
+			// Обрабатываем категории небольшими порциями
+			for (const shopCategory of shopCategories) {
+				try {
+					// Проверяем, нет ли уже маппинга для этой категории
+					const existingMapping = this.mappings.find(m => m.shop_category_id == shopCategory.category_id);
+					if (existingMapping) {
+						processedCount++;
+						$('#progress-count').text(processedCount);
+						continue;
+					}
+
+					// Ищем похожие категории Rozetka
+					const searchResponse = await ApiClient.get(Config.ENDPOINTS.getRozetkaCategories, {
+						search: shopCategory.name,
+						limit: 10
+					});
+
+					if (searchResponse.status === 'success' && searchResponse.categories.length > 0) {
+						// Находим лучшее соответствие
+						let bestMatch = null;
+						let bestScore = 0;
+
+						searchResponse.categories.forEach(rozetkaCategory => {
+							const score = this.calculateSimilarity(shopCategory.name, rozetkaCategory.name);
+							if (score > bestScore && score >= 0.7) { // Минимальный порог 70%
+								bestScore = score;
+								bestMatch = rozetkaCategory;
+							}
+						});
+
+						if (bestMatch) {
+							const mapping = {
+								shop_category_id: shopCategory.category_id,
+								shop_category_name: shopCategory.name,
+								rozetka_category_id: bestMatch.category_id,
+								rozetka_category_name: bestMatch.name,
+								rozetka_category_full_name: bestMatch.full_name,
+								confidence: Math.round(bestScore * 100)
+							};
+							newMappings.push(mapping);
+						}
+					}
+
+					processedCount++;
+					$('#progress-count').text(processedCount);
+
+					// Небольшая задержка, чтобы не перегружать сервер
+					await new Promise(resolve => setTimeout(resolve, 100));
+
+				} catch (error) {
+					console.error(`Ошибка обработки категории ${shopCategory.name}:`, error);
+				}
+			}
+
+			// Добавляем найденные маппинги
+			newMappings.forEach(mapping => {
+				const existingIndex = this.mappings.findIndex(m => m.shop_category_id == mapping.shop_category_id);
+				if (existingIndex === -1) {
+					this.mappings.push(mapping);
+				}
+			});
+
+			this.renderMappings();
+			NotificationManager.success(`Автоматически найдено ${newMappings.length} новых соответствий из ${shopCategories.length} категорий`);
+
 		} catch (error) {
 			NotificationManager.error(`Ошибка автоматического маппинга: ${error.message}`);
 		} finally {
@@ -526,28 +658,53 @@ const CategoryMappingManager = {
 		}
 	},
 
-	async saveMappings() {
-		const btn = $('#btn-save-mappings');
-		const originalHtml = btn.html();
+	/**
+	 * Вычисление схожести названий категорий
+	 */
+	calculateSimilarity(str1, str2) {
+		if (!str1 || !str2) return 0;
 
-		btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Сохранение...');
+		const s1 = str1.toLowerCase().trim();
+		const s2 = str2.toLowerCase().trim();
 
-		try {
-			const response = await ApiClient.post(Config.ENDPOINTS.saveCategoryMappings, {
-				mappings: this.mappings
-			});
+		if (s1 === s2) return 1;
 
-			if (response.status === 'success') {
-				NotificationManager.success('Связи категорий успешно сохранены');
-			} else {
-				throw new Error(response.error || 'Ошибка при сохранении');
-			}
-		} catch (error) {
-			NotificationManager.error('Ошибка при сохранении связей');
-			console.error('Save mappings error:', error);
-		} finally {
-			btn.prop('disabled', false).html(originalHtml);
+		// Проверяем точное вхождение
+		if (s1.includes(s2) || s2.includes(s1)) {
+			return 0.8;
 		}
+
+		// Алгоритм Левенштейна для вычисления расстояния
+		const matrix = [];
+		const len1 = s1.length;
+		const len2 = s2.length;
+
+		for (let i = 0; i <= len1; i++) {
+			matrix[i] = [i];
+		}
+
+		for (let j = 0; j <= len2; j++) {
+			matrix[0][j] = j;
+		}
+
+		for (let i = 1; i <= len1; i++) {
+			for (let j = 1; j <= len2; j++) {
+				if (s1.charAt(i - 1) === s2.charAt(j - 1)) {
+					matrix[i][j] = matrix[i - 1][j - 1];
+				} else {
+					matrix[i][j] = Math.min(
+						matrix[i - 1][j - 1] + 1,
+						matrix[i][j - 1] + 1,
+						matrix[i - 1][j] + 1
+					);
+				}
+			}
+		}
+
+		const distance = matrix[len1][len2];
+		const maxLen = Math.max(len1, len2);
+
+		return maxLen === 0 ? 0 : (maxLen - distance) / maxLen;
 	},
 
 	// Методы для работы с файлами остаются без изменений...

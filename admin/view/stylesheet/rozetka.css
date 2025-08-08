@@ -23,9 +23,13 @@
     /* Neutral Colors */
     --dark: #2c3e50;
     --gray-900: #212529;
+    --gray-800: #343a40;
     --gray-700: #495057;
-    --gray-500: #6c757d;
+    --gray-600: #6c757d;
+    --gray-500: #adb5bd;
+    --gray-400: #ced4da;
     --gray-300: #dee2e6;
+    --gray-200: #e9ecef;
     --gray-100: #f8f9fa;
     --white: #ffffff;
 
@@ -1746,4 +1750,586 @@ input[type="checkbox"]:checked + .toggle-label .toggle-inner::before {
 @keyframes fa-spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+/* Tab header controls */
+.tab-header-controls {
+    position: absolute;
+    top: -25px;
+    right: 20px;
+    z-index: 10;
+}
+
+.btn-save-tab {
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+    border: none;
+    color: var(--white);
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-save-tab::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left var(--transition-slow);
+}
+
+.btn-save-tab:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    color: var(--white);
+}
+
+.btn-save-tab:hover::before {
+    left: 100%;
+}
+
+.btn-save-tab:disabled {
+    opacity: 0.7;
+    transform: none;
+    pointer-events: none;
+}
+
+.btn-save-tab.saving {
+    pointer-events: none;
+}
+
+.btn-save-tab.saving i {
+    animation: fa-spin 1s linear infinite;
+}
+
+/* Adjust tab content position for controls */
+.modern-tab-content .tab-pane {
+    position: relative;
+    padding-top: 20px;
+}
+
+/* Field save animation */
+.field-saved {
+    border-color: var(--success) !important;
+    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25) !important;
+    transition: all var(--transition-fast) !important;
+}
+
+/* ==========================================================================
+   ELEGANT BUTTON SYSTEM
+   ========================================================================== */
+
+/* Base button styling */
+.btn {
+    position: relative;
+    overflow: hidden;
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    transition: all var(--transition-fast);
+    box-shadow: var(--shadow-sm);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left var(--transition-slow);
+    z-index: 1;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    text-decoration: none;
+}
+
+.btn:hover::before {
+    left: 100%;
+}
+
+.btn:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn:disabled,
+.btn.disabled {
+    opacity: 0.7;
+    transform: none;
+    pointer-events: none;
+    box-shadow: var(--shadow-sm);
+}
+
+.btn i {
+    position: relative;
+    z-index: 2;
+}
+
+.btn span {
+    position: relative;
+    z-index: 2;
+}
+
+/* Primary buttons */
+.btn-primary {
+    background: linear-gradient(135deg, var(--rozetka-primary) 0%, var(--rozetka-secondary) 100%);
+    color: var(--white);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    color: var(--white);
+    background: linear-gradient(135deg, #5a67d8 0%, #667eea 100%);
+}
+
+/* Success buttons */
+.btn-success {
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+    color: var(--white);
+}
+
+.btn-success:hover,
+.btn-success:focus {
+    color: var(--white);
+    background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+}
+
+/* Info buttons */
+.btn-info {
+    background: linear-gradient(135deg, var(--info) 0%, #138496 100%);
+    color: var(--white);
+}
+
+.btn-info:hover,
+.btn-info:focus {
+    color: var(--white);
+    background: linear-gradient(135deg, #138496 0%, #117a8b 100%);
+}
+
+/* Warning buttons */
+.btn-warning {
+    background: linear-gradient(135deg, var(--warning) 0%, #e0a800 100%);
+    color: var(--gray-900);
+}
+
+.btn-warning:hover,
+.btn-warning:focus {
+    color: var(--gray-900);
+    background: linear-gradient(135deg, #e0a800 0%, #d39e00 100%);
+}
+
+/* Danger buttons */
+.btn-danger {
+    background: linear-gradient(135deg, var(--danger) 0%, #c82333 100%);
+    color: var(--white);
+}
+
+.btn-danger:hover,
+.btn-danger:focus {
+    color: var(--white);
+    background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
+}
+
+/* Default/Secondary buttons */
+.btn-default,
+.btn-secondary {
+    background: linear-gradient(135deg, var(--gray-100) 0%, #e9ecef 100%);
+    color: var(--gray-700);
+    border: 1px solid var(--gray-300);
+}
+
+.btn-default:hover,
+.btn-default:focus,
+.btn-secondary:hover,
+.btn-secondary:focus {
+    color: var(--gray-700);
+    background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+    border-color: var(--gray-400);
+}
+
+/* Outline buttons */
+.btn-outline-light {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: var(--white);
+    backdrop-filter: blur(10px);
+}
+
+.btn-outline-light:hover,
+.btn-outline-light:focus {
+    background: rgba(255,255,255,0.2);
+    border-color: rgba(255,255,255,0.5);
+    color: var(--white);
+}
+
+.btn-outline-dark {
+    background: rgba(0,0,0,0.05);
+    border: 1px solid var(--gray-300);
+    color: var(--gray-700);
+}
+
+.btn-outline-dark:hover,
+.btn-outline-dark:focus {
+    background: rgba(0,0,0,0.1);
+    border-color: var(--gray-400);
+    color: var(--gray-800);
+}
+
+.btn-outline-danger {
+    background: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    color: var(--danger);
+}
+
+.btn-outline-danger:hover,
+.btn-outline-danger:focus {
+    background: rgba(220, 53, 69, 0.2);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* Button sizes */
+.btn-xs {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: var(--radius-sm);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+}
+
+.btn-lg {
+    padding: 12px 24px;
+    font-size: 1.125rem;
+    min-width: 140px;
+}
+
+/* Control buttons (special large ones) */
+.btn-control {
+    width: 100%;
+    height: 80px;
+    padding: 15px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    color: var(--white);
+    text-decoration: none;
+    background: linear-gradient(135deg, var(--info) 0%, #138496 100%);
+}
+
+.btn-control:hover {
+    color: var(--white);
+    text-decoration: none;
+    transform: translateY(-3px);
+}
+
+.btn-control.btn-success {
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+}
+
+.btn-control.btn-warning {
+    background: linear-gradient(135deg, var(--warning) 0%, #e0a800 100%);
+    color: var(--gray-900);
+}
+
+.btn-control.btn-warning:hover {
+    color: var(--gray-900);
+}
+
+.btn-control.btn-primary {
+    background: linear-gradient(135deg, var(--rozetka-primary) 0%, #5a67d8 100%);
+}
+
+/* Button loading state */
+.btn.btn-loading,
+.btn.saving {
+    pointer-events: none;
+    position: relative;
+}
+
+.btn.btn-loading::after,
+.btn.saving::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin: auto;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    z-index: 3;
+}
+
+/* Upload button special styling */
+.btn-upload {
+    width: 100%;
+    height: 60px;
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+    color: var(--white);
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.btn-upload:hover:not(:disabled) {
+    color: var(--white);
+}
+
+.btn-upload:disabled {
+    background: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.5);
+    cursor: not-allowed;
+}
+
+/* Remove file button */
+.btn-remove-file {
+    background: linear-gradient(135deg, var(--danger) 0%, #c82333 100%);
+    border: none;
+    color: var(--white);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-remove-file:hover {
+    background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
+    transform: scale(1.1);
+    color: var(--white);
+}
+
+/* Accept suggestion button */
+.btn-accept-suggestion {
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+    color: var(--white);
+    border: none;
+}
+
+.btn-accept-suggestion:hover {
+    color: var(--white);
+    background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+}
+
+/* Tab save buttons (enhanced) */
+.btn-save-tab {
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+    border: none;
+    color: var(--white);
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    box-shadow: var(--shadow-md);
+    min-width: 160px;
+}
+
+.btn-save-tab:hover {
+    color: var(--white);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Page header buttons */
+.page-header .btn {
+    min-width: 120px;
+}
+
+/* Status badges as buttons */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all var(--transition-fast);
+    border: none;
+    cursor: default;
+}
+
+.status-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Filter chip buttons */
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--gray-300);
+    color: var(--gray-700);
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 0.85em;
+    margin-right: 8px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: none;
+}
+
+.filter-chip:hover,
+.filter-chip.active {
+    background: linear-gradient(135deg, var(--rozetka-primary) 0%, var(--rozetka-secondary) 100%);
+    color: var(--white);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Control buttons in panels */
+.control-buttons .btn {
+    margin-left: 5px;
+}
+
+.control-buttons .btn:first-child {
+    margin-left: 0;
+}
+
+/* Upload actions buttons */
+.upload-actions .btn {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: var(--white);
+}
+
+.upload-actions .btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.5);
+    color: var(--white);
+}
+
+/* Pagination buttons */
+.pagination > li > a,
+.pagination > li > span {
+    background: linear-gradient(135deg, var(--gray-100) 0%, #f8f9fa 100%);
+    border: 1px solid var(--gray-300);
+    color: var(--gray-700);
+    padding: 8px 12px;
+    transition: all var(--transition-fast);
+    position: relative;
+    overflow: hidden;
+}
+
+.pagination > li > a::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+    transition: left var(--transition-normal);
+}
+
+.pagination > li > a:hover {
+    background: linear-gradient(135deg, var(--rozetka-primary) 0%, var(--rozetka-secondary) 100%);
+    color: var(--white);
+    border-color: var(--rozetka-primary);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.pagination > li > a:hover::before {
+    left: 100%;
+}
+
+.pagination > .active > a {
+    background: linear-gradient(135deg, var(--rozetka-primary) 0%, var(--rozetka-secondary) 100%);
+    border-color: var(--rozetka-primary);
+    color: var(--white);
+    box-shadow: var(--shadow-sm);
+}
+
+.pagination > .disabled > a,
+.pagination > .disabled > span {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Button groups */
+.btn-group .btn {
+    border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.btn-group .btn:last-child {
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.btn-group .btn:only-child {
+    border-radius: var(--radius-md);
+}
+
+/* Input group buttons */
+.input-group-btn .btn {
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    border-left: none;
+}
+
+.input-group-btn .btn:hover {
+    transform: none;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Special animation for main action buttons */
+.btn-primary.btn-lg,
+.btn-success.btn-lg {
+    animation: fadeInUp 0.6s ease forwards;
+}
+
+.btn-primary.btn-lg:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .btn-control {
+        height: 60px;
+        padding: 10px;
+    }
+
+    .btn-lg {
+        padding: 10px 20px;
+        font-size: 1rem;
+    }
+
+    .btn-save-tab {
+        min-width: 140px;
+        padding: 8px 16px;
+    }
 }

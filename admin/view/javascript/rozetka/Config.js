@@ -70,6 +70,8 @@ const Config = {
 		getRozetkaCategories: 'extension/feed/rozetka/getRozetkaCategories',
 		getCategoryMappings: 'extension/feed/rozetka/getCategoryMappings',
 		saveCategoryMappings: 'extension/feed/rozetka/saveCategoryMappings',
+		removeCategoryMapping: 'extension/feed/rozetka/removeCategoryMapping',
+		clearAllMappings: 'extension/feed/rozetka/clearAllMappings',
 		importCategories: 'extension/feed/rozetka/importCategories',
 		clearCategories: 'extension/feed/rozetka/clearCategories'
 	}

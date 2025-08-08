@@ -73,6 +73,7 @@ class ControllerExtensionFeedRozetka extends Controller {
 		$this->document->addScript('view/javascript/rozetka/SettingsManager.js');
 		$this->document->addScript('view/javascript/rozetka/StatisticsManager.js');
 		$this->document->addScript('view/javascript/rozetka/Utils.js');
+		$this->document->addScript('view/javascript/rozetka/TabSaveManager.js');
 		$this->document->addScript('view/javascript/rozetka/RozetkaApp.js');
 		$this->document->addScript('view/javascript/rozetka.js');
 
@@ -201,6 +202,206 @@ class ControllerExtensionFeedRozetka extends Controller {
 		$data['categories'] = $this->model_catalog_category->getCategories();
 		$data['manufacturers'] = $this->model_catalog_manufacturer->getManufacturers();
 		$data['currencies'] = $this->model_localisation_currency->getCurrencies();
+	}
+
+	/**
+	 * Сохранение настроек конкретного таба
+	 */
+	public function saveTabSettings() {
+		$this->load->language('extension/feed/rozetka');
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$tab = $this->request->post['tab'] ?? '';
+			$settings = $this->request->post['settings'] ?? array();
+
+			if (empty($tab) || empty($settings)) {
+				$json['error'] = 'Неверные данные для сохранения';
+			} else {
+				try {
+					// Валидация настроек
+					$validation_errors = $this->validateTabSettings($tab, $settings);
+
+					if (!empty($validation_errors)) {
+						$json['errors'] = $validation_errors;
+					} else {
+						// Сохранение настроек
+						if ($tab === 'mapping') {
+							$this->load->model('extension/feed/rozetka');
+							$this->model_extension_feed_rozetka->saveCategoryMappings($settings['category_mappings']);
+
+							$json['success'] = true;
+							$json['message'] = 'Связи категорий успешно сохранены';
+							$this->log->write('Rozetka Feed: Связи категорий сохранены, количество: ' . count($settings['category_mappings']));
+						} else {
+							// Сохранение настроек для других табов
+							$this->load->model('setting/setting');
+
+							// Получаем текущие настройки
+							$current_settings = $this->model_setting_setting->getSetting('feed_rozetka');
+
+							// Обновляем только настройки конкретного таба
+							foreach ($settings as $key => $value) {
+								$setting_key = 'feed_rozetka_' . $key;
+
+								// Всегда сохраняем значение, даже если это пустой массив
+								$current_settings[$setting_key] = $value;
+							}
+
+							// Для таба фильтров убеждаемся, что массивы исключений всегда установлены
+							if ($tab === 'filters') {
+								if (!isset($settings['exclude_categories'])) {
+									$current_settings['feed_rozetka_exclude_categories'] = array();
+								}
+								if (!isset($settings['exclude_manufacturers'])) {
+									$current_settings['feed_rozetka_exclude_manufacturers'] = array();
+								}
+							}
+
+							// Сохраняем обновленные настройки
+							$this->model_setting_setting->editSetting('feed_rozetka', $current_settings);
+
+							$json['success'] = true;
+							if ($tab === 'settings') {
+								$json['message'] = 'Основные настройки успешно сохранены';
+							} elseif ($tab === 'filters') {
+								$json['message'] = 'Фильтры товаров успешно сохранены';
+							}
+						}
+					}
+				} catch (Exception $e) {
+					$json['error'] = 'Ошибка при сохранении: ' . $e->getMessage();
+					$this->log->write('Rozetka Feed Save Error: ' . $e->getMessage());
+				}
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Валидация настроек таба
+	 */
+	private function validateTabSettings($tab, $settings) {
+		$errors = array();
+
+		if ($tab === 'settings') {
+			// Валидация основных настроек
+			if (isset($settings['image_width'])) {
+				$width = (int)$settings['image_width'];
+				if ($width < 100 || $width > 2000) {
+					$errors['image_width'] = 'Ширина изображения должна быть от 100 до 2000 пикселей';
+				}
+			}
+
+			if (isset($settings['image_height'])) {
+				$height = (int)$settings['image_height'];
+				if ($height < 100 || $height > 2000) {
+					$errors['image_height'] = 'Высота изображения должна быть от 100 до 2000 пикселей';
+				}
+			}
+
+			if (isset($settings['description_length'])) {
+				$length = (int)$settings['description_length'];
+				if ($length < 100 || $length > 10000) {
+					$errors['description_length'] = 'Длина описания должна быть от 100 до 10000 символов';
+				}
+			}
+		} elseif ($tab === 'filters') {
+			// Валидация фильтров
+			if (isset($settings['min_price']) && isset($settings['max_price'])) {
+				$min_price = (float)$settings['min_price'];
+				$max_price = (float)$settings['max_price'];
+
+				if ($min_price > 0 && $max_price > 0 && $min_price >= $max_price) {
+					$errors['price_range'] = 'Минимальная цена не может быть больше максимальной';
+				}
+			}
+		} elseif ($tab === 'mapping') {
+			// Валидация маппинга
+			if (!isset($settings['category_mappings']) || !is_array($settings['category_mappings'])) {
+				$errors['category_mappings'] = 'Некорректные данные маппинга категорий';
+			}
+		}
+
+		return $errors;
+	}
+
+	/**
+	 * Удаление связи категорий
+	 */
+	public function removeCategoryMapping() {
+		$this->load->language('extension/feed/rozetka');
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$shop_category_id = $this->request->post['shop_category_id'] ?? 0;
+
+			if (empty($shop_category_id)) {
+				$json['error'] = 'Некорректный ID категории';
+			} else {
+				try {
+					$this->load->model('extension/feed/rozetka');
+
+					// Получаем текущие маппинги
+					$mappings = $this->model_extension_feed_rozetka->getCategoryMappings();
+
+					// Удаляем нужный маппинг
+					$filtered_mappings = array_filter($mappings, function($mapping) use ($shop_category_id) {
+						return $mapping['shop_category_id'] != $shop_category_id;
+					});
+
+					// Сохраняем обновленный список
+					$this->model_extension_feed_rozetka->saveCategoryMappings($filtered_mappings);
+
+					$json['success'] = true;
+					$json['message'] = 'Связь категории удалена';
+
+					$this->log->write('Rozetka Feed: Удалена связь категории ID: ' . $shop_category_id);
+
+				} catch (Exception $e) {
+					$json['error'] = 'Ошибка при удалении связи: ' . $e->getMessage();
+					$this->log->write('Rozetka Feed Remove Mapping Error: ' . $e->getMessage());
+				}
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Очистка всех связей категорий
+	 */
+	public function clearAllMappings() {
+		$this->load->language('extension/feed/rozetka');
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			try {
+				$this->load->model('extension/feed/rozetka');
+				$this->model_extension_feed_rozetka->saveCategoryMappings(array()); // Сохраняем пустой массив
+
+				$json['success'] = true;
+				$json['message'] = 'Все связи категорий удалены';
+
+				$this->log->write('Rozetka Feed: Все связи категорий удалены администратором');
+
+			} catch (Exception $e) {
+				$json['error'] = 'Ошибка при удалении всех связей: ' . $e->getMessage();
+				$this->log->write('Rozetka Feed Clear All Mappings Error: ' . $e->getMessage());
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
 	}
 
 	/**
