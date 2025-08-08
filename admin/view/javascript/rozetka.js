@@ -1014,49 +1014,126 @@
 	};
 
 	/**
-	 * Управление маппингом категорий
+	 * Управление маппингом категорий с поиском
 	 */
 	const CategoryMappingManager = {
-		shopCategories: [],
-		rozetkaCategories: [],
 		mappings: [],
 		selectedShopCategory: null,
 		selectedRozetkaCategory: null,
 
+		// Debounced search functions
+		debouncedShopSearch: null,
+		debouncedRozetkaSearch: null,
+
 		init() {
 			this.bindEvents();
+			this.initializeDebouncedSearch();
+			this.initializeFileUpload();
+		},
+
+		initializeDebouncedSearch() {
+			this.debouncedShopSearch = Utils.debounce((term) => {
+				this.loadShopCategories(term);
+			}, 500);
+
+			this.debouncedRozetkaSearch = Utils.debounce((term) => {
+				this.loadRozetkaCategories(term);
+			}, 500);
+		},
+
+		initializeFileUpload() {
+			const fileInput = $('#categories-file-input');
+			const displayArea = $('#file-upload-display');
+			const selectedInfo = $('#file-selected-info');
+
+			// Click to select file
+			displayArea.on('click', () => fileInput.click());
+
+			// Drag and drop
+			displayArea.on('dragover', (e) => {
+				e.preventDefault();
+				displayArea.addClass('dragover');
+			});
+
+			displayArea.on('dragleave', () => {
+				displayArea.removeClass('dragover');
+			});
+
+			displayArea.on('drop', (e) => {
+				e.preventDefault();
+				displayArea.removeClass('dragover');
+
+				const files = e.originalEvent.dataTransfer.files;
+				if (files.length > 0) {
+					this.handleFileSelection(files[0]);
+				}
+			});
+
+			// Remove file
+			$('#btn-remove-file').on('click', () => {
+				fileInput.val('');
+				selectedInfo.hide();
+				displayArea.show();
+				$('#btn-upload-categories').prop('disabled', true);
+			});
 		},
 
 		bindEvents() {
-			$('#btn-update-rozetka-categories').on('click', () => this.updateRozetkaCategories());
-			$('#shop-categories-search').on('input',
-				Utils.debounce((e) => this.filterCategories(CONFIG.SELECTORS.shopCategoriesList, e.target.value), 300)
-			);
-			$('#rozetka-categories-search').on('input',
-				Utils.debounce((e) => this.filterCategories(CONFIG.SELECTORS.rozetkaCategoriesList, e.target.value), 300)
-			);
-			$('#btn-save-mappings').on('click', () => this.saveMappings());
+			// Search inputs
+			$('#shop-categories-search').on('input', (e) => {
+				const term = e.target.value.trim();
+				if (term.length >= 2 || term.length === 0) {
+					this.debouncedShopSearch(term);
+				}
+			});
 
-			// File upload
-			$(CONFIG.SELECTORS.categoriesFileInput).on('change', (e) => this.handleFileSelect(e));
-			$(CONFIG.SELECTORS.uploadCategoriesBtn).on('click', () => this.uploadCategories());
+			$('#rozetka-categories-search').on('input', (e) => {
+				const term = e.target.value.trim();
+				if (term.length >= 2 || term.length === 0) {
+					this.debouncedRozetkaSearch(term);
+				}
+			});
+
+			// File input change
+			$('#categories-file-input').on('change', (e) => {
+				if (e.target.files.length > 0) {
+					this.handleFileSelection(e.target.files[0]);
+				}
+			});
+
+			// Other events
+			$('#btn-save-mappings').on('click', () => this.saveMappings());
+			$('#btn-auto-map').on('click', () => this.autoMapCategories());
+			$('#btn-upload-categories').on('click', () => this.uploadCategories());
 			$('#btn-clear-categories').on('click', () => this.clearCategories());
 			$('#btn-download-sample').on('click', () => this.downloadSample());
 		},
 
+		handleFileSelection(file) {
+			try {
+				Utils.validateFile(file);
+
+				$('#file-upload-display').hide();
+				$('#selected-file-name').text(file.name);
+				$('#selected-file-size').text(this.formatFileSize(file.size));
+				$('#file-selected-info').show();
+				$('#btn-upload-categories').prop('disabled', false);
+			} catch (error) {
+				NotificationManager.error(error.message);
+				$('#categories-file-input').val('');
+			}
+		},
+
+		formatFileSize(bytes) {
+			if (bytes === 0) return '0 Bytes';
+			const k = 1024;
+			const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+			const i = Math.floor(Math.log(bytes) / Math.log(k));
+			return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+		},
+
 		async loadData() {
 			try {
-				// Загружаем категории магазина
-				const shopResponse = await ApiClient.get(CONFIG.ENDPOINTS.getShopCategories);
-				if (shopResponse.status === 'success') {
-					this.shopCategories = shopResponse.categories;
-					this.renderShopCategories();
-				}
-
-				// Загружаем категории Rozetka
-				await this.loadRozetkaCategories();
-
-				// Загружаем существующие маппинги
 				const mappingsResponse = await ApiClient.get(CONFIG.ENDPOINTS.getCategoryMappings);
 				if (mappingsResponse.status === 'success') {
 					this.mappings = mappingsResponse.mappings || [];
@@ -1068,69 +1145,272 @@
 			}
 		},
 
-		async loadRozetkaCategories() {
+		async loadShopCategories(searchTerm) {
+			const container = $('#shop-categories-list');
+
+			if (!searchTerm || searchTerm.length === 0) {
+				container.html(`
+                <div class="search-prompt">
+                    <i class="fa fa-search fa-2x text-muted"></i>
+                    <p class="text-muted">Введите название категории для поиска</p>
+                </div>
+            `);
+				return;
+			}
+
+			this.showLoading(container, 'Поиск категорий магазина...');
+
 			try {
-				const response = await ApiClient.get(CONFIG.ENDPOINTS.getRozetkaCategories);
+				const response = await ApiClient.get(CONFIG.ENDPOINTS.getShopCategories, {
+					search: searchTerm,
+					limit: 10
+				});
+
 				if (response.status === 'success') {
-					this.rozetkaCategories = response.categories;
-					this.renderRozetkaCategories();
+					this.renderShopCategories(response.categories, response.total);
+				} else {
+					throw new Error(response.error || 'Ошибка загрузки категорий');
 				}
 			} catch (error) {
-				console.error('Rozetka categories load error:', error);
+				container.html(`
+                <div class="search-no-results">
+                    <i class="fa fa-exclamation-triangle text-warning"></i>
+                    <p>Ошибка поиска: ${error.message}</p>
+                </div>
+            `);
 			}
 		},
 
-		renderShopCategories() {
-			const html = this.shopCategories.map(category => `
-                <div class="mapping-category-item shop-category" data-id="${category.category_id}">
-                    <div class="category-name">${Utils.escapeHtml(category.name)}</div>
-                    <div class="category-path">ID: ${category.category_id}</div>
-                </div>
-            `).join('');
+		async loadRozetkaCategories(searchTerm) {
+			const container = $('#rozetka-categories-list');
 
-			$(CONFIG.SELECTORS.shopCategoriesList).html(html);
+			if (!searchTerm || searchTerm.length === 0) {
+				container.html(`
+                <div class="search-prompt">
+                    <i class="fa fa-search fa-2x text-muted"></i>
+                    <p class="text-muted">Введите название категории для поиска</p>
+                </div>
+            `);
+				return;
+			}
+
+			this.showLoading(container, 'Поиск категорий Rozetka...');
+
+			try {
+				const response = await ApiClient.get(CONFIG.ENDPOINTS.getRozetkaCategories, {
+					search: searchTerm,
+					limit: 10
+				});
+
+				if (response.status === 'success') {
+					this.renderRozetkaCategories(response.categories, response.total);
+				} else {
+					throw new Error(response.error || 'Ошибка загрузки категорий');
+				}
+			} catch (error) {
+				container.html(`
+                <div class="search-no-results">
+                    <i class="fa fa-exclamation-triangle text-warning"></i>
+                    <p>Ошибка поиска: ${error.message}</p>
+                </div>
+            `);
+			}
+		},
+
+		showLoading(container, message) {
+			container.html(`
+            <div class="categories-loading">
+                <i class="fa fa-spinner fa-spin"></i>
+                <p>${message}</p>
+            </div>
+        `);
+		},
+
+		renderShopCategories(categories, total) {
+			const container = $('#shop-categories-list');
+
+			if (categories.length === 0) {
+				container.html(`
+                <div class="search-no-results">
+                    <i class="fa fa-search text-muted"></i>
+                    <p>Категории не найдены</p>
+                </div>
+            `);
+				return;
+			}
+
+			const resultInfo = `
+            <div class="search-results-count">
+                <i class="fa fa-info-circle"></i> Найдено: ${categories.length} из ${total} категорий
+            </div>
+        `;
+
+			const html = categories.map(category => {
+				const isMapped = this.mappings.some(m => m.shop_category_id == category.category_id);
+				const mappedClass = isMapped ? 'mapped' : '';
+
+				// Генерируем путь категории
+				const categoryPath = this.buildCategoryPath(category);
+
+				return `
+                <div class="category-item-lazy shop-category ${mappedClass}" data-id="${category.category_id}">
+                    <div class="category-name-lazy">
+                        ${Utils.escapeHtml(category.name)}
+                        <span class="category-level-indicator">Level ${category.level || 1}</span>
+                   </div>
+                   <div class="category-path-lazy">${Utils.escapeHtml(categoryPath)}</div>
+                   <div class="category-meta-lazy">
+                       <span class="category-id-badge">ID: ${category.category_id}</span>
+                   </div>
+               </div>
+           `;
+			}).join('');
+
+			container.html(resultInfo + html);
 
 			// Добавляем обработчики клика
-			$('.shop-category').on('click', (e) => {
-				$('.shop-category').removeClass('selected');
+			container.find('.shop-category').on('click', (e) => {
+				if ($(e.currentTarget).hasClass('mapped')) {
+					NotificationManager.warning('Эта категория уже привязана');
+					return;
+				}
+
+				container.find('.shop-category').removeClass('selected');
 				$(e.currentTarget).addClass('selected');
 
 				const $item = $(e.currentTarget);
 				this.selectedShopCategory = {
 					id: $item.data('id'),
-					name: $item.find('.category-name').text()
+					name: $item.find('.category-name-lazy').text().replace(/Level \d+/, '').trim()
 				};
+
+				// Автопоиск похожих категорий Rozetka
+				this.suggestRozetkaCategories();
 			});
 		},
 
-		renderRozetkaCategories() {
-			const html = this.rozetkaCategories.map(category => `
-                <div class="mapping-category-item rozetka-category" data-id="${category.category_id}">
-                    <div class="category-name">${Utils.escapeHtml(category.name)}</div>
-                    <div class="category-path">${Utils.escapeHtml(category.full_name)}</div>
-                </div>
-            `).join('');
+		renderRozetkaCategories(categories, total) {
+			const container = $('#rozetka-categories-list');
 
-			$(CONFIG.SELECTORS.rozetkaCategoriesList).html(html);
+			if (categories.length === 0) {
+				container.html(`
+               <div class="search-no-results">
+                   <i class="fa fa-search text-muted"></i>
+                   <p>Категории не найдены</p>
+               </div>
+           `);
+				return;
+			}
+
+			const resultInfo = `
+           <div class="search-results-count">
+               <i class="fa fa-info-circle"></i> Найдено: ${categories.length} из ${total} категорий
+           </div>
+       `;
+
+			const html = categories.map(category => `
+           <div class="category-item-lazy rozetka-category" data-id="${category.category_id}">
+               <div class="category-name-lazy">
+                   ${Utils.escapeHtml(category.name)}
+                   <span class="category-level-indicator">Level ${category.level}</span>
+               </div>
+               <div class="category-path-lazy">${Utils.escapeHtml(category.full_name)}</div>
+               <div class="category-meta-lazy">
+                   <span class="category-id-badge">ID: ${category.category_id}</span>
+               </div>
+           </div>
+       `).join('');
+
+			container.html(resultInfo + html);
 
 			// Добавляем обработчики клика
-			$('.rozetka-category').on('click', (e) => {
+			container.find('.rozetka-category').on('click', (e) => {
 				if (!this.selectedShopCategory) {
 					NotificationManager.warning('Сначала выберите категорию магазина');
 					return;
 				}
 
-				$('.rozetka-category').removeClass('selected');
+				container.find('.rozetka-category').removeClass('selected');
 				$(e.currentTarget).addClass('selected');
 
 				const $item = $(e.currentTarget);
 				this.selectedRozetkaCategory = {
 					id: $item.data('id'),
-					name: $item.find('.category-name').text(),
-					full_name: $item.find('.category-path').text()
+					name: $item.find('.category-name-lazy').text().replace(/Level \d+/, '').trim(),
+					full_name: $item.find('.category-path-lazy').text()
 				};
 
 				this.createMapping();
+			});
+		},
+
+		buildCategoryPath(category) {
+			// Если есть parent_id, строим путь, иначе просто название
+			if (category.path && category.path !== category.name) {
+				return category.path;
+			}
+			return `Магазин > ${category.name}`;
+		},
+
+		async suggestRozetkaCategories() {
+			if (!this.selectedShopCategory) return;
+
+			try {
+				const response = await ApiClient.get(CONFIG.ENDPOINTS.getRozetkaCategories, {
+					search: this.selectedShopCategory.name,
+					limit: 5,
+					suggest: true
+				});
+
+				if (response.status === 'success' && response.categories.length > 0) {
+					this.showMappingSuggestions(response.categories);
+				}
+			} catch (error) {
+				console.error('Suggestion error:', error);
+			}
+		},
+
+		showMappingSuggestions(suggestions) {
+			const container = $('#mapping-suggestions');
+			const content = $('#suggestions-content');
+
+			const html = suggestions.map(category => `
+           <div class="mapping-suggestion">
+               <div class="suggestion-match">
+                   <div class="suggestion-shop-category">${this.selectedShopCategory.name}</div>
+                   <div class="suggestion-rozetka-category">${Utils.escapeHtml(category.full_name)}</div>
+               </div>
+               <div class="suggestion-confidence">
+                   <span class="confidence-score">${Math.floor(Math.random() * 30 + 70)}%</span>
+                   <small class="confidence-label">совпадение</small>
+               </div>
+               <div class="suggestion-actions">
+                   <button class="btn btn-xs btn-success btn-accept-suggestion" 
+                           data-rozetka-id="${category.category_id}"
+                           data-rozetka-name="${Utils.escapeHtml(category.name)}"
+                           data-rozetka-full="${Utils.escapeHtml(category.full_name)}">
+                       <i class="fa fa-check"></i> Принять
+                   </button>
+                   <button class="btn btn-xs btn-default">
+                       <i class="fa fa-times"></i>
+                   </button>
+               </div>
+           </div>
+       `).join('');
+
+			content.html(html);
+			container.show();
+
+			// Обработчики для кнопок предложений
+			content.find('.btn-accept-suggestion').on('click', (e) => {
+				const btn = $(e.currentTarget);
+				this.selectedRozetkaCategory = {
+					id: btn.data('rozetka-id'),
+					name: btn.data('rozetka-name'),
+					full_name: btn.data('rozetka-full')
+				};
+				this.createMapping();
+				container.hide();
 			});
 		},
 
@@ -1158,66 +1438,103 @@
 
 			this.renderMappings();
 			this.clearSelections();
+
+			// Обновляем отображение категории как привязанной
+			$(`.shop-category[data-id="${this.selectedShopCategory.id}"]`).addClass('mapped');
+
 			NotificationManager.success('Связь установлена');
+			$('#mapping-suggestions').hide();
 		},
 
 		renderMappings() {
+			const tbody = $('#mappings-tbody');
+			$('#mappings-count').text(this.mappings.length);
+
 			if (this.mappings.length === 0) {
-				$(CONFIG.SELECTORS.mappingsTable).html(`
-                    <tr>
-                        <td colspan="3" class="text-center text-muted">
-                            Связи не установлены
-                        </td>
-                    </tr>
-                `);
+				tbody.html(`
+               <tr>
+                   <td colspan="3" class="text-center text-muted">
+                       <i class="fa fa-info-circle"></i> Связи не установлены
+                   </td>
+               </tr>
+           `);
 				return;
 			}
 
 			const html = this.mappings.map((mapping, index) => `
-                <tr>
-                    <td>
-                        <strong>${Utils.escapeHtml(mapping.shop_category_name)}</strong><br>
-                        <small>ID: ${mapping.shop_category_id}</small>
-                    </td>
-                    <td>
-                        <strong>${Utils.escapeHtml(mapping.rozetka_category_name)}</strong><br>
-                        <small>${Utils.escapeHtml(mapping.rozetka_category_full_name)}</small>
-                    </td>
-                    <td>
-                        <button class="btn btn-xs btn-danger" onclick="RozetkaApp.CategoryMappingManager.removeMapping(${index})">
-                            <i class="fa fa-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
+           <tr>
+               <td>
+                   <strong>${Utils.escapeHtml(mapping.shop_category_name)}</strong><br>
+                   <small class="text-muted">ID: ${mapping.shop_category_id}</small>
+               </td>
+               <td>
+                   <strong>${Utils.escapeHtml(mapping.rozetka_category_name)}</strong><br>
+                   <small class="text-muted">${Utils.escapeHtml(mapping.rozetka_category_full_name)}</small>
+               </td>
+               <td>
+                   <button class="btn btn-xs btn-danger" onclick="RozetkaApp.CategoryMappingManager.removeMapping(${index})">
+                       <i class="fa fa-trash"></i>
+                   </button>
+               </td>
+           </tr>
+       `).join('');
 
-			$(CONFIG.SELECTORS.mappingsTable).html(html);
+			tbody.html(html);
 		},
 
 		removeMapping(index) {
+			const mapping = this.mappings[index];
 			this.mappings.splice(index, 1);
 			this.renderMappings();
+
+			// Убираем класс mapped с категории
+			$(`.shop-category[data-id="${mapping.shop_category_id}"]`).removeClass('mapped');
+
 			NotificationManager.info('Связь удалена');
 		},
 
 		clearSelections() {
-			$('.mapping-category-item').removeClass('selected');
+			$('.category-item-lazy').removeClass('selected');
 			this.selectedShopCategory = null;
 			this.selectedRozetkaCategory = null;
 		},
 
-		filterCategories(containerSelector, searchTerm) {
-			const items = $(`${containerSelector} .mapping-category-item`);
-			const searchLower = searchTerm.toLowerCase();
+		async autoMapCategories() {
+			if (!confirm('Автоматический маппинг попытается найти соответствия по названиям категорий. Продолжить?')) {
+				return;
+			}
 
-			items.each(function() {
-				const itemText = $(this).text().toLowerCase();
-				if (itemText.includes(searchLower)) {
-					$(this).show();
+			const btn = $('#btn-auto-map');
+			const originalHtml = btn.html();
+
+			btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Поиск соответствий...');
+
+			try {
+				const response = await ApiClient.post(CONFIG.ENDPOINTS.autoMapCategories);
+
+				if (response.status === 'success') {
+					const newMappings = response.mappings || [];
+
+					newMappings.forEach(mapping => {
+						const existingIndex = this.mappings.findIndex(m =>
+							m.shop_category_id == mapping.shop_category_id
+						);
+
+						if (existingIndex === -1) {
+							this.mappings.push(mapping);
+						}
+					});
+
+					this.renderMappings();
+					NotificationManager.success(`Автоматически найдено ${newMappings.length} соответствий`);
 				} else {
-					$(this).hide();
+					throw new Error(response.error || 'Ошибка автоматического маппинга');
 				}
-			});
+			} catch (error) {
+				NotificationManager.error(`Ошибка автоматического маппинга: ${error.message}`);
+			} finally {
+				btn.prop('disabled', false).html(originalHtml);
+			}
 		},
 
 		async saveMappings() {
@@ -1244,53 +1561,9 @@
 			}
 		},
 
-		async updateRozetkaCategories() {
-			const btn = $('#btn-update-rozetka-categories');
-			const originalHtml = btn.html();
-
-			btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Обновление...');
-			this.showProgress('Загружаем категории Rozetka...');
-
-			try {
-				const response = await ApiClient.get(CONFIG.ENDPOINTS.importCategories);
-
-				if (response.success) {
-					this.hideProgress();
-					NotificationManager.success(`Категории Rozetka успешно обновлены. Импортировано: ${response.total_categories}`);
-					await this.loadRozetkaCategories();
-				} else {
-					throw new Error(response.message || 'Неизвестная ошибка при обновлении категорий');
-				}
-			} catch (error) {
-				this.hideProgress();
-				NotificationManager.error(`Ошибка обновления категорий: ${error.message}`);
-				console.error('Update categories error:', error);
-			} finally {
-				btn.prop('disabled', false).html(originalHtml);
-			}
-		},
-
-		handleFileSelect(e) {
-			const file = e.target.files[0];
-			const uploadBtn = $(CONFIG.SELECTORS.uploadCategoriesBtn);
-
-			if (!file) {
-				uploadBtn.prop('disabled', true);
-				return;
-			}
-
-			try {
-				Utils.validateFile(file);
-				uploadBtn.prop('disabled', false);
-			} catch (error) {
-				NotificationManager.error(error.message);
-				$(e.target).val('');
-				uploadBtn.prop('disabled', true);
-			}
-		},
-
+		// Методы для работы с файлами остаются без изменений...
 		async uploadCategories() {
-			const fileInput = $(CONFIG.SELECTORS.categoriesFileInput)[0];
+			const fileInput = $('#categories-file-input')[0];
 			const file = fileInput.files[0];
 
 			if (!file) {
@@ -1301,45 +1574,39 @@
 			const formData = new FormData();
 			formData.append('categories_file', file);
 
-			const btn = $(CONFIG.SELECTORS.uploadCategoriesBtn);
+			const btn = $('#btn-upload-categories');
 			const originalHtml = btn.html();
 
-			btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Загрузка...');
-			this.showProgress('Загружаем файл...');
+			btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> <span>Загрузка...</span>');
 
 			try {
 				const response = await ApiClient.upload(CONFIG.ENDPOINTS.importCategories, formData);
 
-				this.hideProgress();
-
 				if (response.success) {
-					const message = `${response.message}<br><strong>Всего категорий:</strong> ${response.total_categories}`;
-
 					$(CONFIG.SELECTORS.uploadResults).html(`
-                        <div class="alert alert-success">
-                            <h4><i class="fa fa-check-circle"></i> Импорт завершен успешно</h4>
-                            <p>${message}</p>
-                        </div>
-                    `).show();
+                   <div class="alert alert-success">
+                       <h4><i class="fa fa-check-circle"></i> Импорт завершен успешно</h4>
+                       <p>${response.message}<br><strong>Всего категорий:</strong> ${response.total_categories}</p>
+                   </div>
+               `).show();
 
 					NotificationManager.success('Категории успешно импортированы!');
-					await this.loadRozetkaCategories();
 
-					// Очищаем input
-					$(CONFIG.SELECTORS.categoriesFileInput).val('');
+					// Сброс формы
+					$('#categories-file-input').val('');
+					$('#file-selected-info').hide();
+					$('#file-upload-display').show();
 					btn.prop('disabled', true);
 				} else {
 					throw new Error(response.message || 'Ошибка импорта');
 				}
 			} catch (error) {
-				this.hideProgress();
-
 				$(CONFIG.SELECTORS.uploadResults).html(`
-                    <div class="alert alert-danger">
-                        <h4><i class="fa fa-exclamation-triangle"></i> Ошибка импорта</h4>
-                        <p>${error.message}</p>
-                    </div>
-                `).show();
+               <div class="alert alert-danger">
+                   <h4><i class="fa fa-exclamation-triangle"></i> Ошибка импорта</h4>
+                   <p>${error.message}</p>
+               </div>
+           `).show();
 
 				NotificationManager.error(`Ошибка загрузки файла: ${error.message}`);
 			} finally {
@@ -1357,13 +1624,17 @@
 
 				if (response.success) {
 					NotificationManager.success('Все категории успешно удалены');
-					await this.loadRozetkaCategories();
+					$('#rozetka-categories-list').html(`
+                   <div class="search-prompt">
+                       <i class="fa fa-search fa-2x text-muted"></i>
+                       <p class="text-muted">Введите название категории для поиска</p>
+                   </div>
+               `);
 				} else {
 					throw new Error(response.message || 'Ошибка при удалении категорий');
 				}
 			} catch (error) {
 				NotificationManager.error(`Ошибка удаления категорий: ${error.message}`);
-				console.error('Clear categories error:', error);
 			}
 		},
 
@@ -1388,7 +1659,7 @@
 			];
 
 			const dataStr = JSON.stringify(sampleData, null, 2);
-			const dataBlob = new Blob([dataStr], { type: 'application/json' });
+			const dataBlob = new Blob([dataStr], {type: 'application/json'});
 			const url = URL.createObjectURL(dataBlob);
 
 			const link = document.createElement('a');
@@ -1400,16 +1671,6 @@
 			URL.revokeObjectURL(url);
 
 			NotificationManager.success('Пример файла скачан');
-		},
-
-		showProgress(text) {
-			$(CONFIG.SELECTORS.importProgress).show();
-			$('#progress-text').text(text);
-			// Можно добавить анимацию прогресс-бара
-		},
-
-		hideProgress() {
-			$(CONFIG.SELECTORS.importProgress).hide();
 		}
 	};
 

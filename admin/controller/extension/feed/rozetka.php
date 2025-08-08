@@ -356,6 +356,218 @@ class ControllerExtensionFeedRozetka extends Controller {
 		$this->model_extension_feed_rozetka->uninstall();
 	}
 
+	/**
+	 * Получение категорий магазина с поиском (лимит 10)
+	 */
+	public function getShopCategories() {
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$this->load->model('catalog/category');
+
+			$search = $this->request->get['search'] ?? '';
+			$limit = 10; // Фиксированный лимит
+
+			if (empty($search)) {
+				$json = array(
+					'status' => 'success',
+					'categories' => array(),
+					'total' => 0
+				);
+			} else {
+				// Получаем категории с поиском
+				$filter_data = array(
+					'filter_name' => $search,
+					'start' => 0,
+					'limit' => $limit
+				);
+
+				$categories = $this->model_catalog_category->getCategories($filter_data);
+				$total = $this->model_catalog_category->getTotalCategories($filter_data);
+
+				// Дополняем категории информацией о пути и уровне
+				$enriched_categories = array();
+				foreach ($categories as $category) {
+					$category['level'] = $this->calculateCategoryLevel($category['category_id']);
+					$category['path'] = $this->buildCategoryPath($category['category_id']);
+					$enriched_categories[] = $category;
+				}
+
+				$json = array(
+					'status' => 'success',
+					'categories' => $enriched_categories,
+					'total' => $total
+				);
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Получение категорий Rozetka с поиском (лимит 10)
+	 */
+	public function getRozetkaCategories() {
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			$this->load->model('extension/feed/rozetka');
+
+			$search = $this->request->get['search'] ?? '';
+			$limit = 10; // Фиксированный лимит
+
+			if (empty($search)) {
+				$json = array(
+					'status' => 'success',
+					'categories' => array(),
+					'total' => 0
+				);
+			} else {
+				$categories = $this->model_extension_feed_rozetka->getRozetkaCategories(array(
+					'search' => $search,
+					'start' => 0,
+					'limit' => $limit
+				));
+
+				$total = $this->model_extension_feed_rozetka->getTotalRozetkaCategories($search);
+
+				$json = array(
+					'status' => 'success',
+					'categories' => $categories,
+					'total' => $total
+				);
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Вычисление уровня категории
+	 */
+	private function calculateCategoryLevel($category_id, $level = 1) {
+		$this->load->model('catalog/category');
+		$category = $this->model_catalog_category->getCategory($category_id);
+
+		if (!$category || !$category['parent_id']) {
+			return $level;
+		}
+
+		return $this->calculateCategoryLevel($category['parent_id'], $level + 1);
+	}
+
+	/**
+	 * Построение пути категории
+	 */
+	private function buildCategoryPath($category_id) {
+		$this->load->model('catalog/category');
+		$path_parts = array();
+		$current_id = $category_id;
+
+		while ($current_id) {
+			$category = $this->model_catalog_category->getCategory($current_id);
+			if (!$category) break;
+
+			array_unshift($path_parts, $category['name']);
+			$current_id = $category['parent_id'];
+		}
+
+		return implode(' > ', $path_parts);
+	}
+
+	/**
+	 * Автоматический маппинг категорий
+	 */
+	public function autoMapCategories() {
+		$json = array();
+
+		if (!$this->user->hasPermission('modify', 'extension/feed/rozetka')) {
+			$json['error'] = $this->language->get('error_permission');
+		} else {
+			try {
+				$this->load->model('extension/feed/rozetka');
+				$this->load->model('catalog/category');
+
+				// Получаем все категории магазина
+				$shopCategories = $this->model_catalog_category->getCategories(array('limit' => 1000));
+
+				// Получаем все категории Rozetka
+				$rozetkaCategories = $this->model_extension_feed_rozetka->getRozetkaCategories(array('limit' => 10000));
+
+				$mappings = array();
+				$threshold = 0.7; // Порог схожести
+
+				foreach ($shopCategories as $shopCategory) {
+					$bestMatch = null;
+					$bestScore = 0;
+
+					foreach ($rozetkaCategories as $rozetkaCategory) {
+						// Вычисляем схожесть названий
+						$score = $this->calculateSimilarity($shopCategory['name'], $rozetkaCategory['name']);
+
+						if ($score > $bestScore && $score >= $threshold) {
+							$bestScore = $score;
+							$bestMatch = $rozetkaCategory;
+						}
+					}
+
+					if ($bestMatch) {
+						$mappings[] = array(
+							'shop_category_id' => $shopCategory['category_id'],
+							'shop_category_name' => $shopCategory['name'],
+							'rozetka_category_id' => $bestMatch['category_id'],
+							'rozetka_category_name' => $bestMatch['name'],
+							'rozetka_category_full_name' => $bestMatch['full_name'],
+							'confidence' => round($bestScore * 100)
+						);
+					}
+				}
+
+				$json = array(
+					'status' => 'success',
+					'mappings' => $mappings,
+					'total_found' => count($mappings)
+				);
+
+			} catch (Exception $e) {
+				$json = array(
+					'status' => 'error',
+					'error' => $e->getMessage()
+				);
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/**
+	 * Вычисление схожести строк
+	 */
+	private function calculateSimilarity($str1, $str2) {
+		$str1 = mb_strtolower(trim($str1), 'UTF-8');
+		$str2 = mb_strtolower(trim($str2), 'UTF-8');
+
+		if ($str1 === $str2) {
+			return 1.0;
+		}
+
+		// Используем алгоритм Левенштейна
+		$maxLen = max(mb_strlen($str1, 'UTF-8'), mb_strlen($str2, 'UTF-8'));
+		if ($maxLen === 0) {
+			return 0;
+		}
+
+		$distance = levenshtein($str1, $str2);
+		return 1 - ($distance / $maxLen);
+	}
+
 	public function importCategories()
 	{
 		$json = array();
@@ -474,38 +686,6 @@ class ControllerExtensionFeedRozetka extends Controller {
 		}
 
 		return ['valid' => true];
-	}
-
-	/**
-	 * @throws Exception
-	 */
-	public function getShopCategories() {
-		$this->load->model('catalog/category');
-		$categories = $this->model_catalog_category->getCategories();
-
-		$json = array(
-			'status' => 'success',
-			'categories' => $categories
-		);
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	/**
-	 * @throws Exception
-	 */
-	public function getRozetkaCategories() {
-		$this->load->model('extension/feed/rozetka');
-		$categories = $this->model_extension_feed_rozetka->getRozetkaCategories();
-
-		$json = array(
-			'status' => 'success',
-			'categories' => $categories
-		);
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
 	}
 
 	/**

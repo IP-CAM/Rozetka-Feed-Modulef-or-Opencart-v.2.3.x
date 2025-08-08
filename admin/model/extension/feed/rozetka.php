@@ -7,9 +7,48 @@
 class ModelExtensionFeedRozetka extends Model {
 	private string $dbPrefix = DB_PREFIX;
 
-	public function getRozetkaCategories() {
-		$query = $this->db->query("SELECT * FROM `{$this->dbPrefix}rozetka_categories` ORDER BY `level`, `name`");
+	public function getRozetkaCategories($data = array()) {
+		$sql = "SELECT * FROM `{$this->dbPrefix}rozetka_categories`";
+
+		$where = array();
+
+		if (!empty($data['search'])) {
+			$search = $this->db->escape($data['search']);
+			$where[] = "(name LIKE '%{$search}%' OR full_name LIKE '%{$search}%')";
+		}
+
+		if (!empty($where)) {
+			$sql .= " WHERE " . implode(" AND ", $where);
+		}
+
+		$sql .= " ORDER BY `level`, `name`";
+
+		if (isset($data['start']) || isset($data['limit'])) {
+			if ($data['start'] < 0) {
+				$data['start'] = 0;
+			}
+
+			if ($data['limit'] < 1) {
+				$data['limit'] = 20;
+			}
+
+			$sql .= " LIMIT " . (int)$data['start'] . "," . (int)$data['limit'];
+		}
+
+		$query = $this->db->query($sql);
 		return $query->rows;
+	}
+
+	public function getTotalRozetkaCategories($search = '') {
+		$sql = "SELECT COUNT(*) as total FROM `{$this->dbPrefix}rozetka_categories`";
+
+		if (!empty($search)) {
+			$search = $this->db->escape($search);
+			$sql .= " WHERE (name LIKE '%{$search}%' OR full_name LIKE '%{$search}%')";
+		}
+
+		$query = $this->db->query($sql);
+		return (int)$query->row['total'];
 	}
 
 	public function getCategoryMappings() {
@@ -149,6 +188,7 @@ class ModelExtensionFeedRozetka extends Model {
 			'by_level' => $byLevel
 		];
 	}
+
 	public function install()
 	{
 		$this->db->query("CREATE TABLE IF NOT EXISTS `{$this->dbPrefix}rozetka_feed_log` (
