@@ -72,6 +72,7 @@ class ControllerExtensionFeedRozetka extends Controller {
 		$this->document->addScript('view/javascript/rozetka/NotificationManager.js');
 		$this->document->addScript('view/javascript/rozetka/SettingsManager.js');
 		$this->document->addScript('view/javascript/rozetka/StatisticsManager.js');
+		$this->document->addScript('view/javascript/rozetka/Utils.js');
 		$this->document->addScript('view/javascript/rozetka/RozetkaApp.js');
 		$this->document->addScript('view/javascript/rozetka.js');
 

@@ -45,14 +45,16 @@
                         <i class="fa fa-filter"></i> Фильтры товаров
                     </a>
                 </li>
-                <li>
-                    <a href="#tab-history" data-toggle="tab">
-                        <i class="fa fa-history"></i> История генераций
-                    </a>
-                </li>
+
                 <li>
                     <a href="#tab-mapping" data-toggle="tab">
                         <i class="fa fa-link"></i> Маппинг категорий
+                    </a>
+                </li>
+
+                <li>
+                    <a href="#tab-history" data-toggle="tab">
+                        <i class="fa fa-history"></i> История генераций
                     </a>
                 </li>
             </ul>
@@ -74,12 +76,12 @@
 					<?php include("rozetka/filter.tpl"); ?>
                 </div>
 
-                <div class="tab-pane" id="tab-history">
-					<?php include("rozetka/history.tpl"); ?>
-                </div>
-
                 <div class="tab-pane" id="tab-mapping">
 					<?php include("rozetka/category_mapping.tpl"); ?>
+                </div>
+
+                <div class="tab-pane" id="tab-history">
+					<?php include("rozetka/history.tpl"); ?>
                 </div>
             </div>
         </div>

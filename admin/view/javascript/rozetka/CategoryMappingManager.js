@@ -164,6 +164,10 @@ const CategoryMappingManager = {
                 </div>
             `);
 		}
+
+		this.mappings.forEach(mapping => {
+			$(`.shop-category[data-id="${mapping.shop_category_id}"]`).addClass('mapped');
+		});
 	},
 
 	async loadRozetkaCategories(searchTerm) {
@@ -425,7 +429,7 @@ const CategoryMappingManager = {
 		this.clearSelections();
 
 		// Обновляем отображение категории как привязанной
-		$(`.shop-category[data-id="${this.selectedShopCategory.id}"]`).addClass('mapped');
+		$(`.shop-category[data-id="${mappingData.shop_category_id}"]`).addClass('mapped');
 
 		NotificationManager.success('Связь установлена');
 		$('#mapping-suggestions').hide();
